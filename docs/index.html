@@ -1,0 +1,94 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prom · 每日一记 / A daily ledger</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{--ink:#0B0B0C;--paper:#EDE7D6;--gold:#C8A34A;--dim:rgba(237,231,214,.5)}
+  body{background:radial-gradient(60% 50% at 30% 0%,#15140f 0%,#0B0A09 55%,#070706 100%);
+    color:var(--paper);font-family:'PingFang SC','Helvetica Neue',system-ui,sans-serif;
+    min-height:100vh;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:56px 28px 80px;
+    display:grid;grid-template-columns:1fr 400px;gap:64px;align-items:start}
+  .brand{display:flex;align-items:center;gap:10px;font-size:13px;letter-spacing:.34em;
+    color:var(--dim);text-transform:uppercase}
+  .brand i{width:7px;height:7px;border-radius:50%;background:var(--gold);display:block}
+  h1{font-family:'Songti SC',serif;font-size:64px;line-height:1.15;margin:22px 0 10px;letter-spacing:.06em}
+  h1 span{color:var(--gold)}
+  .sub{font-size:17px;line-height:1.9;color:rgba(237,231,214,.72);max-width:520px}
+  .en{font-size:14px;line-height:1.9;color:rgba(237,231,214,.42);max-width:520px;margin-top:8px;
+    font-style:italic}
+  .stats{display:flex;gap:34px;margin:44px 0 8px;flex-wrap:wrap}
+  .stat b{font-family:'Songti SC',serif;font-size:34px;display:block;letter-spacing:.04em}
+  .stat span{font-size:12px;letter-spacing:.22em;color:var(--dim)}
+
+  .feat{margin:38px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:22px 30px;max-width:560px}
+  .fi{border-left:2px solid rgba(200,163,74,.35);padding-left:14px}
+  .fi b{display:block;font-size:15px;letter-spacing:.06em;margin-bottom:4px}
+  .fi span{font-size:13px;line-height:1.75;color:rgba(237,231,214,.5)}
+  .fi span i{font-style:normal;color:rgba(237,231,214,.3);font-size:12px}
+  .shops{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:36px 0 0}
+  .tag{border:1px solid rgba(237,231,214,.16);padding:7px 14px;font-size:13px;
+    letter-spacing:.12em;color:rgba(237,231,214,.66)}
+  .tag.gold{border-color:rgba(200,163,74,.5);color:var(--gold)}
+  .phone{position:sticky;top:40px;justify-self:center}
+  .frame{width:390px;height:800px;border-radius:44px;padding:12px;background:#131314;
+    border:1px solid rgba(237,231,214,.13);
+    box-shadow:0 50px 120px rgba(0,0,0,.75),0 0 0 1px rgba(0,0,0,.6),
+      inset 0 0 0 1px rgba(255,255,255,.04)}
+  .frame iframe{width:100%;height:100%;border:0;border-radius:34px;background:#fff;display:block}
+  .hint{text-align:center;font-size:12px;letter-spacing:.2em;color:rgba(237,231,214,.3);margin-top:16px}
+  .shots{max-width:1180px;margin:0 auto;padding:0 28px 90px;display:flex;gap:18px;overflow-x:auto}
+  .shots img{width:190px;border-radius:16px;border:1px solid rgba(237,231,214,.1);flex:none}
+  footer{max-width:1180px;margin:0 auto;padding:0 28px 60px;font-size:12px;letter-spacing:.16em;
+    color:rgba(237,231,214,.3)}
+  @media(max-width:900px){.wrap{grid-template-columns:1fr;gap:40px}h1{font-size:44px}.phone{position:static}}
+</style></head><body>
+<div class="wrap">
+  <div>
+    <div class="brand"><i></i>PROM</div>
+    <h1>把每天的努力<br><span>记成一笔账</span></h1>
+    <p class="sub">一个 281 KB 的安卓应用。每天花三十秒记下学了什么、花了多久，
+      系统折算成学习点，一天一天累积成七重境界。</p>
+    <p class="en">A 281 KB Android app. Thirty seconds a day to log what you studied and for how
+      long — converted into points, compounding into seven tiers.</p>
+
+    <div class="stats">
+      <div class="stat"><b>281<span style="font-size:15px"> KB</span></b><span>安装包</span></div>
+      <div class="stat"><b>0</b><span>网络权限</span></div>
+      <div class="stat"><b>7</b><span>重境界</span></div>
+      <div class="stat"><b>35</b><span>枚成就</span></div>
+    </div>
+
+
+    <div class="feat">
+      <div class="fi"><b>打卡 / Check in</b><span>选科目、记收获、填时长，三十秒一笔<br><i>Subject, what you did, how long — 30 seconds</i></span></div>
+      <div class="fi"><b>七重 / Seven tiers</b><span>学习点累积成七重境界，瞳色随之点亮<br><i>Points compound into seven tiers; the dragon's eyes light up</i></span></div>
+      <div class="fi"><b>战报 / Report</b><span>每天一页：投入、获得、连续天数<br><i>One page a day: time, points, streak</i></span></div>
+      <div class="fi"><b>离线 / Offline</b><span>不申请网络权限，数据只在本机<br><i>No network permission. Everything stays on device</i></span></div>
+    </div>
+
+    <div class="shops">
+      <span class="tag gold">Android 8.0+</span>
+      <span class="tag">离线可用</span>
+      <span class="tag">无需注册</span>
+      <span class="tag">无广告</span>
+      <span class="tag">MIT</span>
+    </div>
+  </div>
+
+  <div class="phone">
+    <div class="frame"><iframe src="app.html" title="Prom 在线演示"></iframe></div>
+    <div class="hint">直 接 在 页 面 里 试 用</div>
+  </div>
+</div>
+
+<div class="shots">
+  <img src="shots/home.png" alt="首页">
+  <img src="shots/checkin.png" alt="打卡">
+  <img src="shots/rank.png" alt="境界">
+  <img src="shots/tiers.png" alt="图鉴">
+  <img src="shots/ach.png" alt="成就">
+</div>
+
+<footer>PROM · 2026 · TUSAN苏苏 · MIT LICENSE</footer>
+</body></html>
