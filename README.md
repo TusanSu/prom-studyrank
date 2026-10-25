@@ -140,23 +140,38 @@ app/
 ├─ build.gradle                    versionCode 47 / versionName 12.8
 └─ src/main/
    ├─ AndroidManifest.xml          4 个权限
-   ├─ assets/index.html            界面与逻辑（单文件）
+   ├─ assets/index.html            界面与逻辑（单文件，5406 行）
    └─ java/com/studyrank/app/      5 个 Java 类
 ios/                               iOS 工程（WKWebView 外壳）
 ├─ Prom.xcodeproj
 └─ Prom/
-   ├─ PromApp.swift                App 入口 + 四个 JS 桥
-   └─ www/                         与安卓共用的网页
+   ├─ PromApp.swift                App 入口 + 五个 JS 桥
+   └─ www/index.html               与安卓共用的网页
 docs/                              GitHub Pages 在线演示
 ├─ index.html                      落地页（手机框内嵌 App）
-└─ app.html                        App 本体，浏览器可直接运行
+└─ app.html                        App 本体，由 docs/build-pwa.sh 生成
+tools/
+└─ smoke-test.js                   零依赖冒烟测试（node，17 条断言）
 ```
+
+> `app/src/main/assets/index.html` 是唯一真源。改完记得同步 iOS 那份：
+> `cp app/src/main/assets/index.html ios/Prom/www/index.html`
+>
+> 改完界面先跑一遍测试：`node tools/smoke-test.js app/src/main/assets/index.html`
 
 ## 版本 / Version
 
 **12.8** — 境界更名「一重·天枢 → 七重·摇光」，徽章加入龙瞳配色；新增 iOS 工程。
 
-*Tiers renamed after the seven stars of the Big Dipper; dragon-eye badge colours; iOS target added.*
+发布后又在同版本号内做了一轮优化：
+
+- **存储**：头像拆到独立键、`save()` 300 ms 去抖、有原生桥时不再双写 `localStorage`、存档读入统一清洗（脏日期/NaN 学习点直接丢弃）；
+- **备份**：新增「导出 / 导入备份文件」——Android 写「下载/Prom」，iOS 走系统分享面板；导入按 id 合并（不再整体覆盖）；同步密钥升级为带 crc32 校验的 `PROM2`，旧密钥仍可读；
+- **修复**：iOS 前台通知不弹（缺 `UNUserNotificationCenterDelegate`）、iOS「每日提醒」开关每次重置、Android 授权结果不回传、`onPause` 落盘顺序反了、周目标奖励不落盘、成就「任务狂」「回来了」永远解锁不了、跨天不刷新、「清空全部数据」清不干净（奖励点数残留）、iOS 网页副本落后 82 行；
+- **性能**：徽章 HTML 缓存、成就进度一趟算一次、学习点汇总缓存。
+
+*Storage split + debounced writes, JSON backup import/export with id-based merge, CRC-checked sync keys, iOS/Android notification fixes, render caching, and a dependency-free smoke test (17 assertions).*
+
 
 ## 许可 / License
 

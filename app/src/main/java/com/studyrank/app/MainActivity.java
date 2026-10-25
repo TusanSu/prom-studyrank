@@ -94,6 +94,7 @@ public class MainActivity extends Activity {
         webView.addJavascriptInterface(new ImageBridge(), "PromImage");
         webView.addJavascriptInterface(new UiBridge(), "PromUI");
         webView.addJavascriptInterface(new NotifyBridge(), "PromNotify");
+        webView.addJavascriptInterface(new FileBridge(), "PromFile");
 
         // 背景色与页面一致，冷启动不闪白屏
         webView.setBackgroundColor(0xFFEEF1F9);
@@ -122,11 +123,40 @@ public class MainActivity extends Activity {
     }
 
     private static final int REQ_PICK_AVATAR = 41;
+    private static final int REQ_PICK_BACKUP = 42;
 
-    /** 选头像：系统图库 → 压缩 → base64 回传给页面 */
+    /** 选头像：系统图库 → 压缩 → base64 回传给页面
+     *  导入备份：系统文件选择器 → 读文本 → base64 回传给页面 */
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_PICK_BACKUP) {
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+            final Uri pick = data.getData();
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        InputStream in = getContentResolver().openInputStream(pick);
+                        if (in == null) throw new IllegalStateException("打不开文件");
+                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                        byte[] buf = new byte[8192];
+                        int n, total = 0;
+                        while ((n = in.read(buf)) > 0) {
+                            total += n;
+                            if (total > 16 * 1024 * 1024) throw new IllegalStateException("文件太大");
+                            bos.write(buf, 0, n);
+                        }
+                        in.close();
+                        String b64 = Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP);
+                        callJs("window.__promImportB64 && window.__promImportB64('" + b64 + "');");
+                    } catch (Exception e) {
+                        callJs("window.__promToast && window.__promToast('读取备份文件失败');");
+                    }
+                }
+            }).start();
+            return;
+        }
         if (requestCode != REQ_PICK_AVATAR) return;
         if (resultCode != RESULT_OK || data == null || data.getData() == null) {
             callJs("window.__promAvatarCancel && window.__promAvatarCancel();");
@@ -481,19 +511,92 @@ public class MainActivity extends Activity {
         }
     }
 
-    @Override
-    protected void onPause() {
-        // 切后台时让页面把最新状态写进 SharedPreferences，避免被回收时丢数据
-        if (webView != null) {
+    /** 备份文件：导出写进「下载/Prom」，导入走系统文件选择器回传 base64 */
+    public class FileBridge {
+
+        @JavascriptInterface
+        public String exportText(String text, String filename) {
             try {
-                webView.evaluateJavascript("window.__promFlush && window.__promFlush();", null);
-            } catch (Exception ignored) {
+                if (filename == null || filename.length() == 0) filename = "prom-backup.json";
+                byte[] bytes = text.getBytes("UTF-8");
+
+                if (Build.VERSION.SDK_INT >= 29) {
+                    ContentValues v = new ContentValues();
+                    v.put(MediaStore.MediaColumns.DISPLAY_NAME, filename);
+                    v.put(MediaStore.MediaColumns.MIME_TYPE, "application/json");
+                    v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Prom");
+                    Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                    if (uri == null) return "导出失败：无法创建文件";
+                    OutputStream os = getContentResolver().openOutputStream(uri);
+                    if (os == null) return "导出失败：无法写入";
+                    os.write(bytes);
+                    os.close();
+                    return "已导出到 下载/Prom/" + filename;
+                }
+
+                File dir = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
+                if (dir == null) return "导出失败：存储不可用";
+                if (!dir.exists()) dir.mkdirs();
+                File out = new File(dir, filename);
+                FileOutputStream fos = new FileOutputStream(out);
+                fos.write(bytes);
+                fos.close();
+                return "已导出到 " + out.getAbsolutePath();
+            } catch (Exception e) {
+                return "导出失败：" + e.getMessage();
             }
         }
-        if (prefs != null) {
+
+        @JavascriptInterface
+        public void pickText() {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                        i.addCategory(Intent.CATEGORY_OPENABLE);
+                        i.setType("*/*");
+                        i.putExtra(Intent.EXTRA_MIME_TYPES,
+                            new String[]{"application/json", "text/plain", "application/octet-stream"});
+                        startActivityForResult(i, REQ_PICK_BACKUP);
+                    } catch (Exception e) {
+                        callJs("window.__promToast && window.__promToast('无法打开文件选择器');");
+                    }
+                }
+            });
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        // 切后台时让页面把最新状态写进 SharedPreferences，避免被回收时丢数据。
+        // evaluateJavascript 是异步的，必须等它回调再 commit，否则 commit 跑在页面写入之前，
+        // 等于什么都没落盘。
+        if (webView != null) {
+            try {
+                webView.evaluateJavascript("window.__promFlush && window.__promFlush();",
+                    new android.webkit.ValueCallback<String>() {
+                        @Override
+                        public void onReceiveValue(String value) {
+                            if (prefs != null) prefs.edit().commit();
+                        }
+                    });
+            } catch (Exception ignored) {
+            }
+        } else if (prefs != null) {
             prefs.edit().commit();
         }
         super.onPause();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQ_NOTIFY) return;
+        boolean granted = grantResults.length > 0
+            && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        // 把授权结果回传页面，否则「通知权限」一直停在未开启，测试通知也发不出去
+        callJs("window.__promPerm && window.__promPerm(" + granted + ");");
     }
 
     @Override

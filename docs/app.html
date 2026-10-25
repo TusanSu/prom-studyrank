@@ -21,8 +21,10 @@
 /* SECTION: design tokens（黑白极简 / 单色体系） */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#ffffff; --bg-soft:#f4f4f2; --card:rgba(255,255,255,.80);
+  --bg:#ffffff; --bg-soft:#f4f4f2; --bg-2:#f2f2ef; --card:rgba(255,255,255,.80);
   --ink:#0b0b0b; --ink-2:#666; --ink-3:#9a9a9a;
+  --latin:ui-sans-serif,system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  --serif:"Songti SC","Noto Serif CJK SC","Noto Serif SC","STSong","SimSun",serif;
   --line:#e7e7e4; --line-2:#d3d3cf; --chip:#fafaf8;
   --on-ink:#ffffff; --hairline:rgba(128,128,128,.28);
   --radius:14px; --shadow:none; --sc-default:#c8c8c4;
@@ -32,7 +34,7 @@
   --amb-1:rgba(0,0,0,.115); --amb-2:rgba(0,0,0,.08); --amb-blend:multiply;
 }
 html[data-theme="dark"]{
-  --bg:#000000; --bg-soft:#0a0a0a; --card:rgba(24,24,24,.86);
+  --bg:#000000; --bg-soft:#0a0a0a; --bg-2:#141414; --card:rgba(24,24,24,.86);
   --ink:#f3f3f1; --ink-2:#a2a2a2; --ink-3:#707070;
   --line:#232323; --line-2:#343434; --chip:#101010;
   --on-ink:#000000; --chrome:rgba(0,0,0,.88); --sc-default:#3c3c3c;
@@ -1388,9 +1390,15 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
           <div class="pf-main"><div class="pf-name">本地存储</div>
             <div class="pf-desc" id="dataDesc">打卡 0 条 · 成绩 0 条</div></div>
         </div>
+        <div class="uc-line"></div>
+        <div class="uc-row">
+          <button class="uc-btn" id="backupExport" type="button">导出备份文件</button>
+          <button class="uc-btn" id="backupImport" type="button">导入备份文件</button>
+        </div>
+        <input type="file" id="backupFile" accept=".json,application/json" hidden>
         <button class="btn-ghost" id="reportBtn" type="button">生成今日战报</button>
         <button class="btn-ghost danger" id="clearBtn" type="button">清空全部数据</button>
-        <p class="range-hint">数据只保存在当前浏览器本地（演示性质，不上传、不跨设备同步），清除浏览器数据会重置进度。</p>
+        <p class="range-hint">数据只保存在本机，不上传、不联网。导出的 .json 可用来备份或换机；同步密钥是轻量版，记录多了用文件更稳。</p>
       </div>
     </div>
   </section>
@@ -1773,12 +1781,14 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
   var EXAM_KINDS = ['月考', '期中考', '期末考', '模拟考'];
   var WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   var STORE_KEY = 'prom.state.v1';
+  var AVATAR_KEY = 'prom.avatar.v1';
   var THEME_KEY = 'prom.theme';
 
   /* CORE: 持久化适配层
      file:// 页面里的 localStorage 只存在内存，应用被系统回收就会清空；
      所以优先走原生 SharedPreferences（Android 注入的 window.PromStore），
-     localStorage 仅作兜底（浏览器预览时使用）。 */
+     localStorage 只在没有原生桥时兜底（浏览器预览）。
+     有原生桥时不再双写 —— 同一份数据存两遍，序列化两遍，纯浪费。 */
   var NATIVE = (typeof window.PromStore !== 'undefined' && window.PromStore) ? window.PromStore : null;
   var store = {
     get: function (k) {
@@ -1792,10 +1802,14 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     },
     set: function (k, v) {
       v = String(v);
-      var ok = false;
-      try { if (NATIVE) { NATIVE.set(k, v); ok = true; } } catch (e) { ok = false; }
-      try { localStorage.setItem(k, v); ok = true; } catch (e) { /* 忽略 */ }
-      return ok;
+      if (NATIVE) {
+        try { NATIVE.set(k, v); return true; } catch (e) { /* 失败时退到 localStorage */ }
+      }
+      try { localStorage.setItem(k, v); return true; } catch (e) { return false; }
+    },
+    remove: function (k) {
+      try { if (NATIVE) NATIVE.remove(k); } catch (e) { /* 忽略 */ }
+      try { localStorage.removeItem(k); } catch (e) { /* 忽略 */ }
     },
     flush: function () {
       try { if (NATIVE) NATIVE.flush(); } catch (e) { /* 忽略 */ }
@@ -1830,49 +1844,168 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
       flags: {}
     };
   }
+
+  /* CORE: 存档清洗
+     手改、截断、跨版本的存档不能把 NaN / 非法日期带进段位计算，
+     所以读盘和导入都走同一套校验。 */
+  function num(v, def) { return (typeof v === 'number' && isFinite(v)) ? v : def; }
+  function str(v, def) { return typeof v === 'string' ? v : def; }
+  function tempId(prefix) {
+    return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+  function cleanRecord(r) {
+    if (!r || typeof r !== 'object') return null;
+    var sid = str(r.subject, '');
+    if (!SUB[sid]) return null;
+    if (!parseYmd(str(r.date, ''))) return null;
+    var pts = num(r.points, NaN);
+    if (!isFinite(pts)) return null;
+    return {
+      id: str(r.id, tempId('r')),
+      subject: sid,
+      gain: str(r.gain, ''),
+      gainName: str(r.gainName, '学习记录'),
+      note: str(r.note, ''),
+      min: Math.max(0, Math.round(num(r.min, 0))),
+      points: Math.max(0, Math.round(pts)),
+      date: r.date,
+      time: str(r.time, ''),
+      ts: num(r.ts, 0)
+    };
+  }
+  function cleanExam(e) {
+    if (!e || typeof e !== 'object') return null;
+    var sid = str(e.subject, '');
+    if (sid !== 'total' && !SUB[sid]) return null;
+    if (!parseYmd(str(e.date, ''))) return null;
+    var score = num(e.score, NaN), full = num(e.full, NaN);
+    if (!isFinite(score) || !isFinite(full) || full <= 0) return null;
+    return {
+      id: str(e.id, tempId('e')),
+      subject: sid,
+      kind: str(e.kind, EXAM_KINDS[0]),
+      score: Math.max(0, score),
+      full: Math.max(1, full),
+      date: e.date,
+      ts: num(e.ts, 0)
+    };
+  }
+  function cleanBonus(b) {
+    if (!b || typeof b !== 'object') return null;
+    var p = num(b.pts, NaN);
+    if (!isFinite(p) || !parseYmd(str(b.date, ''))) return null;
+    return {
+      id: str(b.id, tempId('b')),
+      date: b.date,
+      subject: str(b.subject, ''),
+      pts: p,
+      reason: str(b.reason, '')
+    };
+  }
+  function uniqueById(list) {
+    var seen = {}, out = [];
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i];
+      if (!it || seen[it.id]) continue;
+      seen[it.id] = 1;
+      out.push(it);
+    }
+    return out;
+  }
+  function cleanList(arr, fn) {
+    if (!Array.isArray(arr)) return [];
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var v = fn(arr[i]);
+      if (v) out.push(v);
+    }
+    return uniqueById(out);
+  }
+
+  /** 把任意来源的对象补全成一份合法 state（load / 导入 / 合并都走这里） */
+  function hydrate(o) {
+    var d = defaults();
+    if (!o || typeof o !== 'object') return d;
+    if (o.profile && typeof o.profile === 'object') {
+      if (typeof o.profile.name === 'string') d.profile.name = o.profile.name;
+      if (typeof o.profile.uid === 'string') d.profile.uid = o.profile.uid;
+      // 老存档把头像塞在 profile 里：这里先带过来，initAvatar() 会搬到独立键并删掉
+      if (typeof o.profile.avatar === 'string') d.profile.avatar = o.profile.avatar;
+      if (Array.isArray(o.profile.selected) && o.profile.selected.length) {
+        var sel = o.profile.selected.filter(function (id) { return !!SUB[id]; });
+        FIXED.forEach(function (id) { if (sel.indexOf(id) < 0) sel.unshift(id); });
+        d.profile.selected = sel;
+      }
+      if (typeof o.profile.gaokao === 'string') d.profile.gaokao = o.profile.gaokao;
+      if (o.profile.stage === 'junior' || o.profile.stage === 'senior') d.profile.stage = o.profile.stage;
+      if (typeof o.profile.totalFull === 'number' && o.profile.totalFull >= 100 && o.profile.totalFull <= 1500) {
+        d.profile.totalFull = Math.round(o.profile.totalFull);
+      }
+      if (typeof o.profile.region === 'string') d.profile.region = o.profile.region;
+      if (o.profile.totalFullAuto === false) d.profile.totalFullAuto = false;
+    }
+    d.records = cleanList(o.records, cleanRecord);
+    d.exams = cleanList(o.exams, cleanExam);
+    d.bonus = cleanList(o.bonus, cleanBonus);
+    if (o.quests && typeof o.quests === 'object' && typeof o.quests.date === 'string' && Array.isArray(o.quests.items)) {
+      d.quests = {
+        date: o.quests.date,
+        items: o.quests.items.filter(function (it) {
+          return it && typeof it === 'object' && typeof it.id === 'string';
+        })
+      };
+    }
+    if (o.ach && typeof o.ach === 'object' && o.ach.unlocked && typeof o.ach.unlocked === 'object') {
+      d.ach.unlocked = o.ach.unlocked;
+    }
+    if (o.rewards && typeof o.rewards === 'object') d.rewards = o.rewards;
+    if (o.flags && typeof o.flags === 'object') d.flags = o.flags;
+    return d;
+  }
+
   function load() {
     try {
       var raw = store.get(STORE_KEY);
       if (!raw) return defaults();
-      var o = JSON.parse(raw);
-      if (!o || typeof o !== 'object') return defaults();
-      var d = defaults();
-      if (o.profile && typeof o.profile === 'object') {
-        if (typeof o.profile.name === 'string') d.profile.name = o.profile.name;
-        if (typeof o.profile.uid === 'string') d.profile.uid = o.profile.uid;
-        if (typeof o.profile.avatar === 'string') d.profile.avatar = o.profile.avatar;
-        if (Array.isArray(o.profile.selected) && o.profile.selected.length) {
-          var sel = o.profile.selected.filter(function (id) { return !!SUB[id]; });
-          FIXED.forEach(function (id) { if (sel.indexOf(id) < 0) sel.unshift(id); });
-          d.profile.selected = sel;
-        }
-        if (typeof o.profile.gaokao === 'string') d.profile.gaokao = o.profile.gaokao;
-        if (o.profile.stage === 'junior' || o.profile.stage === 'senior') d.profile.stage = o.profile.stage;
-        if (typeof o.profile.totalFull === 'number' && o.profile.totalFull >= 100 && o.profile.totalFull <= 1500) {
-          d.profile.totalFull = Math.round(o.profile.totalFull);
-        }
-        if (typeof o.profile.region === 'string') d.profile.region = o.profile.region;
-        if (o.profile.totalFullAuto === false) d.profile.totalFullAuto = false;
-      }
-      if (Array.isArray(o.records)) d.records = o.records;
-      if (Array.isArray(o.exams)) d.exams = o.exams;
-      if (Array.isArray(o.bonus)) d.bonus = o.bonus.filter(function (b) { return b && typeof b.pts === 'number'; });
-      if (o.quests && typeof o.quests === 'object' && typeof o.quests.date === 'string' && Array.isArray(o.quests.items)) {
-        d.quests = { date: o.quests.date, items: o.quests.items };
-      }
-      if (o.ach && typeof o.ach === 'object' && o.ach.unlocked && typeof o.ach.unlocked === 'object') {
-        d.ach.unlocked = o.ach.unlocked;
-      }
-      if (o.rewards && typeof o.rewards === 'object') d.rewards = o.rewards;
-      if (o.flags && typeof o.flags === 'object') d.flags = o.flags;
-      return d;
+      return hydrate(JSON.parse(raw));
     } catch (e) { /* 数据损坏时回到初始状态 */ }
     return defaults();
   }
   var state = load();
-  function save() {
+
+  /* 头像单独存一个键：它是 20–30 KB 的 base64，混在 state 里会被每次写盘反复序列化 */
+  var avatarUrl = '';
+  (function initAvatar() {
+    try {
+      var legacy = (state.profile && typeof state.profile.avatar === 'string') ? state.profile.avatar : '';
+      var stored = store.get(AVATAR_KEY) || '';
+      avatarUrl = stored || legacy;
+      if (legacy) {
+        if (!stored) store.set(AVATAR_KEY, legacy);
+        delete state.profile.avatar;   // 从主存档摘掉，下一轮写盘就不带它了
+      }
+    } catch (e) { avatarUrl = ''; }
+  })();
+
+  /* CORE: 写盘（去抖）
+     一次打卡会连续触发 2–3 次 save()，合并成 300ms 内的一次序列化；
+     切后台 / 退到后台时用 flushStore() 立刻落盘。 */
+  var saveTimer = null, saveDirty = false;
+  function saveNow() {
+    saveDirty = false;
     var ok = store.set(STORE_KEY, JSON.stringify(state));
     if (!ok) showToast('存储不可用，本次记录只保留在页面上');
+    return ok;
+  }
+  function save() {
+    saveDirty = true;
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () { saveTimer = null; saveNow(); }, 300);
+  }
+  function flushStore() {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    if (saveDirty) saveNow();
+    store.flush();
   }
 
   /* CORE: 日期工具 */
@@ -1885,8 +2018,12 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
   function parseYmd(s) {
     var p = String(s || '').split('-');
     if (p.length !== 3) return null;
-    var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
-    return isNaN(d.getTime()) ? null : d;
+    var y = Number(p[0]), m = Number(p[1]), d = Number(p[2]);
+    if (!(y > 1900 && y < 3000 && m >= 1 && m <= 12 && d >= 1 && d <= 31)) return null;
+    var dt = new Date(y, m - 1, d);
+    // '2026-13-45' 之类会被 Date 静默滚到下个月，这里回读一次确认
+    if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+    return dt;
   }
   function dayLabel(dateStr) {
     if (dateStr === todayStr()) return '今天';
@@ -1908,23 +2045,30 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     });
   }
 
-  /* CORE: 学习点统计 */
-  function pointsOf(sid) {
-    var n = 0, i;
+  /* CORE: 学习点统计
+     按「记录数|奖励数」做缓存键，长度一变就自动重算；
+     renderAll 开头还会强制清一次，覆盖"数量没变但内容换了"（导入备份）的情况。 */
+  var ptsKey = '', ptsMap = null, ptsTotal = 0;
+  function resetPointsCache() { ptsKey = ''; ptsMap = null; ptsTotal = 0; }
+  function pointsTable() {
+    var k = state.records.length + '|' + state.bonus.length;
+    if (ptsMap && k === ptsKey) return ptsMap;
+    var m = {}, total = 0, i, r, b;
     for (i = 0; i < state.records.length; i++) {
-      if (state.records[i].subject === sid) n += state.records[i].points;
+      r = state.records[i];
+      m[r.subject] = (m[r.subject] || 0) + r.points;
+      total += r.points;
     }
     for (i = 0; i < state.bonus.length; i++) {
-      if (state.bonus[i].subject === sid) n += state.bonus[i].pts;
+      b = state.bonus[i];
+      m[b.subject] = (m[b.subject] || 0) + b.pts;
+      total += b.pts;
     }
-    return n;
+    ptsKey = k; ptsMap = m; ptsTotal = total;
+    return m;
   }
-  function totalPoints() {
-    var n = 0, i;
-    for (i = 0; i < state.records.length; i++) n += state.records[i].points;
-    for (i = 0; i < state.bonus.length; i++) n += state.bonus[i].pts;
-    return n;
-  }
+  function pointsOf(sid) { return pointsTable()[sid] || 0; }
+  function totalPoints() { pointsTable(); return ptsTotal; }
   function todayBonusPoints() {
     var t = todayStr(), n = 0;
     for (var i = 0; i < state.bonus.length; i++) if (state.bonus[i].date === t) n += state.bonus[i].pts;
@@ -1940,6 +2084,17 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     var n = 0, k = start;
     while (seen[dayOffsetStr(k)]) { n++; k--; }
     return n;
+  }
+  /* 断签 3 天以上后重新打卡：成就「回来了」用（原来只读 flags.comeback，没人写） */
+  function markComeback() {
+    if (state.flags.comeback) return;
+    var seen = {}, i, d;
+    for (i = 0; i < state.records.length; i++) seen[state.records[i].date] = true;
+    var hasOld = false;
+    for (d in seen) { if (seen.hasOwnProperty(d) && d < dayOffsetStr(-3)) { hasOld = true; break; } }
+    if (!hasOld) return;
+    for (i = 1; i <= 3; i++) { if (seen[dayOffsetStr(-i)]) return; }
+    state.flags.comeback = true;
   }
   function todayCount() {
     var t = todayStr(), n = 0;
@@ -2239,8 +2394,21 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     return '<g fill="' + tc + '">' + eye(exL) + eye(exR) + '</g>';
   }
 
+  /* 徽章 HTML 缓存：每枚约 50 个 SVG 节点 / 2.2 KB 字符串，
+     renderAll 一趟要生成十几枚，同一状态反复重绘时直接命中 */
+  var BADGE_CACHE = {}, badgeCacheCount = 0;
   function rankBadgeHTML(idx, sub, frac, mode) {
     mode = mode || 'full';
+    var key = idx + '|' + mode + '|' + (Math.round((frac || 0) * 1000) / 1000);
+    var hit = BADGE_CACHE[key];
+    if (hit) return hit;
+    var html = buildBadgeHTML(idx, frac, mode);
+    if (badgeCacheCount > 400) { BADGE_CACHE = {}; badgeCacheCount = 0; }
+    BADGE_CACHE[key] = html;
+    badgeCacheCount++;
+    return html;
+  }
+  function buildBadgeHTML(idx, frac, mode) {
     var c = TIER_CFG[idx] || TIER_CFG[0];
 
     if (mode === 'compact') {
@@ -2442,7 +2610,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     $('onbNext').textContent = onbStep === 3 ? '开始使用' : '下一步';
     onbPaintStage();
     var img = $('onbAvatarImg'), ph = $('onbPh');
-    if (p.avatar) { img.src = p.avatar; img.hidden = false; ph.hidden = true; }
+    if (avatarUrl) { img.src = avatarUrl; img.hidden = false; ph.hidden = true; }
     else { img.hidden = true; ph.hidden = false; }
     $('onbRem').setAttribute('aria-checked', onbRemOn ? 'true' : 'false');
     if (onbStep === 1) onbPaintChips();
@@ -3591,8 +3759,11 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     return state.profile.uid;
   }
   function applyAvatarDataUrl(dataUrl) {
-    state.profile.avatar = dataUrl;
-    save();
+    avatarUrl = dataUrl || '';
+    try {
+      if (avatarUrl) store.set(AVATAR_KEY, avatarUrl);
+      else store.remove(AVATAR_KEY);
+    } catch (e) { /* 忽略 */ }
     renderProfile();
     try {
       if (!$('onboard').hidden) {
@@ -3604,7 +3775,47 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     haptic('light');
     showToast('头像已更新');
   }
-  /* ---- 同步密钥：state → deflate → base64url ---- */
+
+  /* ---- 备份载荷（密钥与 .json 文件共用同一套信封） ---- */
+  var BACKUP_APP = 'prom-backup';
+  var BACKUP_VER = 2;
+  function buildEnvelope() {
+    ensureUid();
+    return { app: BACKUP_APP, v: BACKUP_VER, at: Date.now(), avatar: avatarUrl || '', state: state };
+  }
+  function stateFromEnvelope(obj) {
+    if (!obj || typeof obj !== 'object') throw new Error('内容不是备份数据');
+    if (obj.app === BACKUP_APP && obj.state && typeof obj.state === 'object') return obj.state;
+    if (Array.isArray(obj.records)) return obj;      // 兼容 v1 密钥 / 裸 state
+    throw new Error('备份格式不正确');
+  }
+  function avatarFromEnvelope(obj) {
+    if (obj && typeof obj.avatar === 'string' && obj.avatar) return obj.avatar;
+    // 老密钥（PROM1）把头像存在 state.profile.avatar 里
+    var st = (obj && obj.state && typeof obj.state === 'object') ? obj.state : obj;
+    if (st && st.profile && typeof st.profile.avatar === 'string' && st.profile.avatar) return st.profile.avatar;
+    return '';
+  }
+
+  /* ---- crc32：识别"复制少了一段"的密钥 ---- */
+  var CRC_TABLE = null;
+  function crc32(str) {
+    if (!CRC_TABLE) {
+      CRC_TABLE = [];
+      for (var n = 0; n < 256; n++) {
+        var c = n;
+        for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        CRC_TABLE[n] = c >>> 0;
+      }
+    }
+    var crc = 0xFFFFFFFF;
+    for (var i = 0; i < str.length; i++) crc = CRC_TABLE[(crc ^ str.charCodeAt(i)) & 0xFF] ^ (crc >>> 8);
+    var hex = ((crc ^ 0xFFFFFFFF) >>> 0).toString(16);
+    while (hex.length < 8) hex = '0' + hex;
+    return hex;
+  }
+
+  /* ---- 同步密钥：信封 → deflate → base64url + crc32 ---- */
   function b64urlEncode(bytes) {
     var bin = '', i;
     for (i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
@@ -3628,38 +3839,158 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     return new Uint8Array(ab);
   }
   async function buildSyncKey() {
-    ensureUid();
-    var raw = new TextEncoder().encode(JSON.stringify(state));
+    var raw = new TextEncoder().encode(JSON.stringify(buildEnvelope()));
     if (typeof CompressionStream === 'function') {
       try {
-        var packed = await deflateBytes(raw);
-        return 'PROM1Z:' + b64urlEncode(packed);
+        var b64 = b64urlEncode(await deflateBytes(raw));
+        return 'PROM2Z:' + b64 + '.' + crc32(b64);
       } catch (e) { /* 回退到不压缩 */ }
     }
-    return 'PROM1R:' + b64urlEncode(raw);
+    var plain = b64urlEncode(raw);
+    return 'PROM2R:' + plain + '.' + crc32(plain);
   }
   async function parseSyncKey(text) {
-    var m = /^PROM1([ZR]):([A-Za-z0-9_-]+)$/.exec(String(text || '').trim());
-    if (!m) throw new Error('密钥格式不正确');
-    var bytes = b64urlDecode(m[2]);
-    if (m[1] === 'Z') bytes = await inflateBytes(bytes);
-    var obj = JSON.parse(new TextDecoder().decode(bytes));
-    if (!obj || !Array.isArray(obj.records)) throw new Error('密钥内容不完整');
-    return obj;
+    var s = String(text || '').trim();
+    var m2 = /^PROM2([ZR]):([A-Za-z0-9_-]+)(?:\.([0-9a-f]{8}))?$/.exec(s);
+    if (m2) {
+      if (m2[3] && crc32(m2[2]) !== m2[3]) throw new Error('密钥不完整（校验失败），请重新复制');
+      var bytes2 = b64urlDecode(m2[2]);
+      if (m2[1] === 'Z') bytes2 = await inflateBytes(bytes2);
+      return JSON.parse(new TextDecoder().decode(bytes2));
+    }
+    var m1 = /^PROM1([ZR]):([A-Za-z0-9_-]+)$/.exec(s);   // 老密钥继续可读
+    if (!m1) throw new Error('密钥格式不正确');
+    var bytes = b64urlDecode(m1[2]);
+    if (m1[1] === 'Z') bytes = await inflateBytes(bytes);
+    return JSON.parse(new TextDecoder().decode(bytes));
   }
-  async function applySyncKey(text) {
-    var obj = await parseSyncKey(text);
-    store.set(STORE_KEY, JSON.stringify(obj));
-    state = load();
+
+  /* ---- 合并：按 id 取并集，导入方优先；本机独有的记录一条不删 ---- */
+  function mergeStates(local, remote) {
+    var base = hydrate(local), r = hydrate(remote), out = base;
+    function union(a, b) {
+      var seen = {}, list = [], i;
+      for (i = 0; i < b.length; i++) if (!seen[b[i].id]) { seen[b[i].id] = 1; list.push(b[i]); }
+      for (i = 0; i < a.length; i++) if (!seen[a[i].id]) { seen[a[i].id] = 1; list.push(a[i]); }
+      return list;
+    }
+    out.records = union(base.records, r.records);
+    out.exams = union(base.exams, r.exams);
+    out.bonus = union(base.bonus, r.bonus);
+    out.profile = {
+      name: r.profile.name || base.profile.name,
+      uid: base.profile.uid || r.profile.uid || '',
+      selected: r.profile.selected.length ? r.profile.selected : base.profile.selected,
+      gaokao: r.profile.gaokao || base.profile.gaokao,
+      stage: r.profile.stage || base.profile.stage,
+      region: r.profile.region || base.profile.region,
+      totalFull: r.profile.totalFull || base.profile.totalFull,
+      totalFullAuto: r.profile.totalFullAuto
+    };
+    out.quests = (String(r.quests.date) >= String(base.quests.date)) ? r.quests : base.quests;
+    var unlocked = {}, k;
+    for (k in base.ach.unlocked) if (base.ach.unlocked.hasOwnProperty(k)) unlocked[k] = base.ach.unlocked[k];
+    for (k in r.ach.unlocked) if (r.ach.unlocked.hasOwnProperty(k) && !unlocked[k]) unlocked[k] = r.ach.unlocked[k];
+    out.ach = { unlocked: unlocked };
+    var rewards = {};
+    for (k in base.rewards) if (base.rewards.hasOwnProperty(k)) rewards[k] = base.rewards[k];
+    for (k in r.rewards) if (r.rewards.hasOwnProperty(k) && !rewards[k]) rewards[k] = r.rewards[k];
+    out.rewards = rewards;
+    var flags = {};
+    for (k in base.flags) if (base.flags.hasOwnProperty(k)) flags[k] = base.flags[k];
+    for (k in r.flags) if (r.flags.hasOwnProperty(k)) flags[k] = r.flags[k];
+    flags.onboarded = true;
+    out.flags = flags;
+    if (typeof out.flags.questDone !== 'number') out.flags.questDone = 0;
+    return out;
+  }
+
+  function applyIncoming(obj) {
+    state = mergeStates(state, stateFromEnvelope(obj));
+    var av = avatarFromEnvelope(obj);
+    if (av) {
+      avatarUrl = av;
+      try { store.set(AVATAR_KEY, av); } catch (e) { /* 忽略 */ }
+    }
     ensureUid();
-    save();
+    resetPointsCache();
+    saveNow();
     renderAll();
     haptic('hard');
-    showToast('已恢复到本机 · 共 ' + state.records.length + ' 条打卡');
+    showToast('已合并导入 · 现共 ' + state.records.length + ' 条打卡');
+  }
+
+  async function applySyncKey(text) {
+    applyIncoming(await parseSyncKey(text));
+  }
+
+  /* ---- 备份文件：导出 / 导入 .json ---- */
+  function backupFileName() { return 'prom-backup-' + todayStr() + '.json'; }
+  function downloadText(text, name) {
+    try {
+      var blob = new Blob([text], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      return '已开始下载';
+    } catch (e) { return '导出失败，请重试'; }
+  }
+  function exportBackup() {
+    var json = JSON.stringify(buildEnvelope());
+    var name = backupFileName();
+    if (window.PromFile && window.PromFile.exportText) {
+      var msg = '';
+      try { msg = window.PromFile.exportText(json, name); } catch (e) { msg = ''; }
+      showToast(msg || '已导出备份文件');
+      return;
+    }
+    showToast(downloadText(json, name));
+  }
+  function base64ToUtf8(b64) {
+    var bin = atob(b64), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(out);
+  }
+  /* 原生文件选择器把文件内容以 base64 回传（纯 ASCII，不用操心转义） */
+  window.__promImportB64 = function (b64) {
+    var text = '';
+    try { text = base64ToUtf8(b64); } catch (e) { showToast('读取文件失败'); return; }
+    importText(text);
+  };
+  function importText(text) {
+    var obj;
+    try { obj = JSON.parse(text); } catch (e) { showToast('不是有效的备份文件'); return; }
+    var incoming;
+    try { incoming = hydrate(stateFromEnvelope(obj)); } catch (e) {
+      showToast(e && e.message ? e.message : '备份格式不正确');
+      return;
+    }
+    if (!incoming.records.length && !incoming.exams.length) { showToast('这个备份里没有记录'); return; }
+    openConfirm('导入备份（合并）', [
+      ['备份内容', incoming.records.length + ' 条打卡、' + incoming.exams.length + ' 条成绩'],
+      ['本机现有', state.records.length + ' 条打卡、' + state.exams.length + ' 条成绩'],
+      ['合并方式', '按 id 去重后并集，不会删除本机记录']
+    ], '合并导入', function () {
+      try { applyIncoming(obj); } catch (e) { showToast('导入失败'); }
+    });
+  }
+  function pickBackupFile() {
+    if (window.PromFile && window.PromFile.pickText) {
+      try { window.PromFile.pickText(); } catch (e) { /* 落到原生失败就退回 input */ }
+      return;
+    }
+    var f = $('backupFile');
+    if (f) f.click();
   }
 
   window.__promAvatar = applyAvatarDataUrl;
   window.__promAvatarCancel = function () {};
+  window.__promToast = function (msg) { showToast(msg); };
 
   function shrinkImage(file, cb) {
     var reader = new FileReader();
@@ -3682,13 +4013,14 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     var p = state.profile;
     $('profId').textContent = ensureUid();
     var img = $('profAvatarImg'), ph = $('profPh');
-    if (p.avatar) { img.src = p.avatar; img.hidden = false; ph.hidden = true; }
+    if (avatarUrl) { img.src = avatarUrl; img.hidden = false; ph.hidden = true; }
     else { img.hidden = true; ph.hidden = false; }
     $('nameInput').value = p.name;
     $('dataDesc').textContent = '打卡 ' + state.records.length + ' 条 · 成绩 ' + state.exams.length + ' 条 · 选科 ' +
       state.profile.selected.length + ' 门';
   }
   function renderAll() {
+    resetPointsCache();
     var doneQ = syncQuests();
     renderHero(); renderHistory(); renderRanks(false); renderTotalRank();
     renderScoreBoard(); renderExamList(); renderRankRules(); renderCountdown(); renderProfile();
@@ -3757,6 +4089,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
   function doCheckin(s, g, note, min, pts) {
     if (typeof min !== 'number') min = 30;
     if (typeof pts !== 'number') pts = earnPoints(g, min, s.id);
+    try { markComeback(); } catch (e) { /* 成就判定失败不影响打卡 */ }
     var beforeInfo = rankInfo(pointsOf(s.id));
     var now = new Date(), hh = now.getHours(), mm = now.getMinutes();
     state.records.push({
@@ -3770,14 +4103,15 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
       time: (hh < 10 ? '0' + hh : hh) + ':' + (mm < 10 ? '0' + mm : mm),
       ts: now.getTime()
     });
+    /* 周目标奖励必须在 renderAll 之前结算：否则奖励只进内存，
+       界面不刷新、也不会落盘，进程被回收就白干 */
+    var weekBonus = 0;
+    try { weekBonus = checkWeekGoal(s.id); } catch (e) { weekBonus = 0; }
     renderAll();
     haptic('light');
     elNote.value = '';
     elHint.className = 'form-hint ok';
-    var weekBonus = 0;
-    try { weekBonus = checkWeekGoal(s.id); } catch (e) { weekBonus = 0; }
     if (weekBonus) {
-      pts += 0;
       showToast('本周累计 12 小时，额外 +' + weekBonus + ' 学习点');
     }
     elHint.textContent = s.name + '·' + g.name + ' ' + min + ' 分钟已记录，+' + pts + ' 学习点，继续保持！';
@@ -3963,6 +4297,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
   elScore.addEventListener('input', function () { elScore.classList.remove('err'); setExamHint(''); });
   /* ---- 每日提醒（原生 AlarmManager + 通知） ---- */
   var remindOn = false;
+  var pendingTest = false;
   function remBridge() { return window.PromNotify || null; }
 
   var remGranted = true;
@@ -4059,7 +4394,15 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
   $('remTest').addEventListener('click', function () {
     var b = remBridge();
     if (!b) return;
-    if (b.requestPermission) b.requestPermission();
+    var granted = true;
+    try { granted = !!JSON.parse(b.status() || '{}').granted; } catch (e) { granted = remGranted; }
+    if (!granted) {
+      // 没授权就先申请，等原生回调 __promPerm(true) 后再真正发测试通知
+      pendingTest = true;
+      if (b.requestPermission) b.requestPermission();
+      showToast('授权后会自动发送测试通知');
+      return;
+    }
     b.test();
     showToast('已发送测试通知');
   });
@@ -4085,10 +4428,10 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     $('keyText').readOnly = false;
     $('keyText').value = '';
     $('keyApply').hidden = false;
-    $('keyNote').textContent = '粘贴另一台设备生成的密钥，点「恢复数据」覆盖本机数据。';
+    $('keyNote').textContent = '粘贴另一台设备生成的密钥，点「恢复数据」会与本机数据合并。';
     var txt = '';
     try { txt = (window.PromUI && PromUI.readClipboard) ? PromUI.readClipboard() : ''; } catch (e) { txt = ''; }
-    if (/^PROM1[ZR]:/.test(txt || '')) {
+    if (/^PROM[12][ZR]:/.test(txt || '')) {
       $('keyText').value = txt.trim();
       $('keyNote').textContent = '已从剪贴板自动读取密钥，确认后点「恢复数据」。';
       haptic('light');
@@ -4098,7 +4441,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
 
   $('keyCopy').addEventListener('click', function () {
     var v = $('keyText').value.trim();
-    if (!v || v.indexOf('PROM1') !== 0) { showToast('还没有可复制的密钥'); return; }
+    if (!v || !/^PROM[12][ZR]:/.test(v)) { showToast('还没有可复制的密钥'); return; }
     if (window.PromUI && PromUI.copy) PromUI.copy(v);
     else if (navigator.clipboard) navigator.clipboard.writeText(v);
     showToast('密钥已复制');
@@ -4120,17 +4463,30 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     var v = $('keyText').value.trim();
     if (!v) { showToast('请先粘贴密钥'); return; }
     if (state.records.length || state.exams.length) {
-      openConfirm('恢复会覆盖本机数据', [
+      openConfirm('恢复密钥（合并）', [
         ['本机现有', state.records.length + ' 条打卡、' + state.exams.length + ' 条成绩'],
         ['密钥内容', '另一台设备的完整数据'],
-        ['提醒', '覆盖后本机原有记录不可恢复']
-      ], '确认恢复', function () { doApplyKey(v); });
+        ['合并方式', '按 id 去重后并集，本机记录一条不删']
+      ], '合并恢复', function () { doApplyKey(v); });
     } else {
       doApplyKey(v);
     }
   });
 
   $('keyClose').addEventListener('click', function () { $('keyBox').hidden = true; });
+
+  /* ---- 备份文件（.json）：主路径，密钥是轻量版 ---- */
+  $('backupExport').addEventListener('click', exportBackup);
+  $('backupImport').addEventListener('click', pickBackupFile);
+  $('backupFile').addEventListener('change', function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function () { importText(String(rd.result || '')); };
+    rd.onerror = function () { showToast('读取文件失败'); };
+    rd.readAsText(f);
+    this.value = '';
+  });
 
   $('profAvatar').addEventListener('click', function () {
     if (window.PromImage && window.PromImage.pick) {
@@ -4217,14 +4573,26 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
   });
   $('clearBtn').addEventListener('click', function () {
     openConfirm('确认清空全部数据吗？', [
-      ['将删除', state.records.length + ' 条打卡、' + state.exams.length + ' 条成绩'],
-      ['保留', '选科与高考日期设置'],
+      ['将删除', state.records.length + ' 条打卡、' + state.exams.length + ' 条成绩、全部成就'],
+      ['保留', '选科、地区与考试日期设置'],
       ['提醒', '清空后段位全部回到一重·天枢']
     ], '确认清空', function () {
-      var keep = { name: state.profile.name, selected: state.profile.selected.slice(), gaokao: state.profile.gaokao,
-        uid: state.profile.uid, avatar: state.profile.avatar };
-      state.records = []; state.exams = [];
+      var keep = {
+        name: state.profile.name,
+        selected: state.profile.selected.slice(),
+        gaokao: state.profile.gaokao,
+        uid: state.profile.uid,
+        stage: state.profile.stage,
+        region: state.profile.region,
+        totalFull: state.profile.totalFull,
+        totalFullAuto: state.profile.totalFullAuto
+      };
+      var onboarded = state.flags.onboarded;
+      state = defaults();
       state.profile = keep;
+      state.flags.onboarded = onboarded;
+      resetPointsCache();
+      buildCheckinChips();
       renderAll();
       showToast('已清空记录，段位重新起步');
     });
@@ -4350,6 +4718,8 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
           id: 'b' + Date.now() + Math.floor(Math.random() * 1000),
           date: todayStr(), subject: subj, pts: it.pts, reason: it.text
         });
+        // 累计完成的任务数（成就「任务狂」用），之前这个计数根本没人写
+        state.flags.questDone = (state.flags.questDone || 0) + 1;
       }
     });
     if (changed) save();
@@ -4406,7 +4776,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     { id: 'p1000', icon: '千', name: '一千点', desc: '累计 1000 学习点', tier: 2, target: 1000, prog: totalPoints },
     { id: 'p5000', icon: '万', name: '五千点', desc: '累计 5000 学习点', tier: 3, target: 5000, prog: totalPoints },
     { id: 'gold', icon: '三', name: '摸到三重', desc: '总段位达到三重', tier: 2, target: 2, prog: function () { return rankInfo(avgPoints()).idx; } },
-    { id: 'diamond', icon: '六', name: '六重开阳', desc: '总段位达到六重', tier: 3, target: 4, prog: function () { return rankInfo(avgPoints()).idx; } },
+    { id: 'diamond', icon: '六', name: '六重开阳', desc: '总段位达到六重', tier: 3, target: 5, prog: function () { return rankInfo(avgPoints()).idx; } },
     { id: 'exam1', icon: '考', name: '第一次模考', desc: '记录一次考试成绩', tier: 1, target: 1, prog: function () { return state.exams.length; } },
     { id: 'exam10', icon: '测', name: '十次考试', desc: '累计记录 10 次成绩', tier: 2, target: 10, prog: function () { return state.exams.length; } },
     { id: 'subj6', icon: '六', name: '当日全能', desc: '一天内覆盖全部显示科目', tier: 2, target: 1, prog: function () {
@@ -4443,7 +4813,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     { id: 'king', icon: '七', name: '七重摇光', desc: '总段位达到七重', tier: 3, target: 6, prog: function () { return rankInfo(avgPoints()).idx; } },
     { id: 'exam600', icon: '六', name: '六百分', desc: '单次总分达到 600', tier: 2, target: 600, prog: function () {
         var m = 0;
-        state.exams.forEach(function (e) { if (e.kind === 'total') m = Math.max(m, e.score || 0); });
+        state.exams.forEach(function (e) { if (e.subject === 'total') m = Math.max(m, e.score || 0); });
         return m;
       } },
     { id: 'full', icon: '满', name: '满分', desc: '任意一次考试拿到满分', tier: 3, target: 1, prog: function () {
@@ -4462,10 +4832,13 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     { id: 's14', icon: '两', name: '两周', desc: '连续打卡 14 天', tier: 2, target: 14, prog: streakDays },
     { id: 'exam20', icon: '廿', name: '二十次考试', desc: '累计记录 20 次成绩', tier: 3, target: 20, prog: function () { return state.exams.length; } },
     { id: 'quest30', icon: '务', name: '任务狂', desc: '累计完成 30 个任务', tier: 2, target: 30, prog: function () {
-        var n = 0;
-        state.records.forEach(function () {});
-        n = (state.quests.doneCount || 0);
-        return n;
+        // 老存档没有这个计数：用"历史完成的任务条数"兜底估一次
+        if (typeof state.flags.questDone !== 'number') {
+          var n = 0;
+          state.quests.items.forEach(function (q) { if (q.done) n++; });
+          state.flags.questDone = n;
+        }
+        return state.flags.questDone;
       } },
     { id: 'longnote', icon: '长', name: '写了一行', desc: '写一条 20 字以上的备注', tier: 1, target: 1, prog: function () {
         return state.records.some(function (r) { return r.note && r.note.length >= 20; }) ? 1 : 0;
@@ -4521,6 +4894,15 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     return ACH_DEFS.filter(function (a) { return !a.secret; }).length;
   }
   function renderAch() {
+    /* 每个成就的进度一趟算一次：原来每张卡要调 2–4 次 prog()，
+       而 prog() 里全是全表扫描，成就一多就是白白翻几遍记录 */
+    var progMap = {};
+    ACH_DEFS.forEach(function (a) {
+      var v = 0;
+      try { v = a.prog(); } catch (e) { v = 0; }
+      progMap[a.id] = isFinite(v) ? v : 0;
+    });
+
     var total = achBaseTotal();
     var got = 0;
     for (var k in state.ach.unlocked) if (state.ach.unlocked[k]) got++;
@@ -4531,13 +4913,12 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     var next = null, best = -1;
     ACH_DEFS.forEach(function (a) {
       if (a.secret || state.ach.unlocked[a.id]) return;
-      var r = 0;
-      try { r = Math.min(1, a.prog() / a.target); } catch (e) { r = 0; }
+      var r = Math.min(1, progMap[a.id] / a.target);
       if (r > best) { best = r; next = a; }
     });
     if ($('achNext')) {
       $('achNext').textContent = next
-        ? '下一个 · ' + next.name + '　' + Math.min(next.target, Math.floor((function () { try { return next.prog(); } catch (e) { return 0; } })())) + '/' + next.target
+        ? '下一个 · ' + next.name + '　' + Math.min(next.target, Math.floor(progMap[next.id])) + '/' + next.target
         : '全部成就已解锁';
     }
 
@@ -4546,8 +4927,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     grid.innerHTML = '';
     achList().forEach(function (a, i) {
       var on = !!state.ach.unlocked[a.id];
-      var pct = 0;
-      try { pct = Math.min(100, a.prog() / a.target * 100); } catch (e) { pct = 0; }
+      var pct = Math.min(100, progMap[a.id] / a.target * 100);
       var card = el('div', 'ach' + (on ? ' on' : ' locked') + ' t' + a.tier);
       card.style.animationDelay = (i * 0.018).toFixed(2) + 's';
       var m = el('div', 'm');
@@ -4562,8 +4942,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
         fill.style.width = pct + '%';
         bar.appendChild(fill);
         wrap.appendChild(bar);
-        var cur = 0;
-        try { cur = Math.min(a.target, Math.floor(a.prog())); } catch (e) { cur = 0; }
+        var cur = Math.min(a.target, Math.floor(progMap[a.id]));
         wrap.appendChild(el('span', 'pg', cur + '/' + a.target));
         card.appendChild(wrap);
       } else {
@@ -4934,7 +5313,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
       if (n >= 5) {
         n = 0;
         var q = QUOTES[Math.floor(Math.random() * QUOTES.length)];
-        eggUnlock('egg_badge', q.text + ' —— ' + q.by);
+        eggUnlock('egg_badge', q.t + ' —— ' + q.a);
       }
     });
   })();
@@ -4981,18 +5360,49 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
   /* 初始指示条 */
   setTimeout(function () { moveTabInd('checkin'); }, 60);
 
+  /* INIT: 降低动效开关（此前 __noMotion 从未被赋值，等于永远关闭） */
+  try {
+    window.__noMotion = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  } catch (e) { window.__noMotion = false; }
+
+  /* INIT: 原生通知授权结果回调（Android onRequestPermissionsResult 会调用） */
+  window.__promPerm = function (granted) {
+    paintPerm(!!granted);
+    if (granted && pendingTest) { pendingTest = false; try { ReminderBridgeTest(); } catch (e) { } }
+  };
+  function ReminderBridgeTest() {
+    var b = remBridge();
+    if (b && b.test) b.test();
+  }
+
   /* INIT: 落盘钩子（原生侧 onPause 也会调用） */
   window.__promFlush = function () {
     try {
-      store.set(STORE_KEY, JSON.stringify(state));
+      flushStore();
       store.set(THEME_KEY, themeMode);
       store.flush();
     } catch (e) { /* 忽略 */ }
   };
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'hidden') window.__promFlush();
+    if (document.visibilityState === 'hidden') { window.__promFlush(); return; }
+    checkDayRollover();
   });
   window.addEventListener('pagehide', function () { window.__promFlush(); });
+
+  /* 跨天刷新：应用常驻后台过夜（或停在打卡页到 00:05）时，"今天"不能还是昨天 */
+  var dayCursor = todayStr();
+  function checkDayRollover() {
+    var now = todayStr();
+    if (now === dayCursor) return;
+    dayCursor = now;
+    try {
+      ensureQuests();
+      resetPointsCache();
+      renderAll();
+      paintPomoWeek();
+    } catch (e) { /* 忽略 */ }
+  }
+  setInterval(checkDayRollover, 60000);
 
   /* INIT */
   if (location.hash === '#support') showSupport(true);

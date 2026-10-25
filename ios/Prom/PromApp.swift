@@ -11,17 +11,37 @@ import WebKit
 import UserNotifications
 import Photos
 import UIKit
+import UniformTypeIdentifiers
 
 // MARK: - App
 
 @main
 struct PromApp: App {
+    init() {
+        // 前台也要能弹出提醒：没有 delegate 时，应用在前台收到的本地通知会被系统静默丢弃，
+        // 番茄钟结束、测试通知都会「什么都不发生」。
+        UNUserNotificationCenter.current().delegate = NotifDelegate.shared
+    }
+
     var body: some Scene {
         WindowGroup {
             PromWebView()
                 .ignoresSafeArea()
                 .preferredColorScheme(nil)
         }
+    }
+}
+
+// MARK: - 通知回调
+
+final class NotifDelegate: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = NotifDelegate()
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler:
+                                    @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list, .sound])
     }
 }
 
@@ -99,9 +119,26 @@ final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
 
       window.PromNotify = {
         status: function () {
-          return JSON.stringify({ granted: !!window.__promNotifGranted });
+          // 之前这里只回 granted，页面读不到 on / h / m，
+          // 于是每次启动开关都显示成「关闭」，时间也回到 21:00。
+          var on = false, h = 21, m = 0;
+          try {
+            var raw = localStorage.getItem('prom.remind');
+            if (raw) {
+              var s = JSON.parse(raw);
+              on = !!s.on;
+              if (typeof s.h === 'number') h = s.h;
+              if (typeof s.m === 'number') m = s.m;
+            }
+          } catch (e) {}
+          return JSON.stringify({ on: on, h: h, m: m, granted: !!window.__promNotifGranted });
         },
-        set: function (on, hour, min) { post('notifySet', { on: !!on, hour: hour, min: min }); },
+        set: function (on, hour, min) {
+          try {
+            localStorage.setItem('prom.remind', JSON.stringify({ on: !!on, h: hour, m: min }));
+          } catch (e) {}
+          post('notifySet', { on: !!on, hour: hour, min: min });
+        },
         refresh: function () { post('notifyRefresh'); },
         test: function () { post('notifyTest'); },
         pomoStart: function (seconds, title, text) {
@@ -118,6 +155,14 @@ final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
           return '已保存到相册';
         }
       };
+
+      window.PromFile = {
+        exportText: function (text, name) {
+          post('exportText', { text: text, name: name || 'prom-backup.json' });
+          return '已打开分享面板，存到「文件」即可';
+        },
+        pickText: function () { post('pickText'); }
+      };
     })();
     """
 
@@ -132,7 +177,10 @@ final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             let granted = (settings.authorizationStatus == .authorized
                            || settings.authorizationStatus == .provisional)
             DispatchQueue.main.async {
-                self.webView?.evaluateJavaScript("window.__promNotifGranted = \(granted);", completionHandler: nil)
+                // 顺带回写页面，修正「通知权限」那一行（首屏渲染时状态还没查完）
+                self.webView?.evaluateJavaScript(
+                    "window.__promNotifGranted = \(granted); window.__promPerm && window.__promPerm(\(granted));",
+                    completionHandler: nil)
             }
         }
     }
@@ -161,6 +209,9 @@ final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         case "openSettings":   openSystemSettings()
         case "requestPermission": requestAuth()
         case "saveImage":      saveImage(dataURL: body["data"] as? String ?? "")
+        case "exportText":     shareText(body["text"] as? String ?? "",
+                                         name: body["name"] as? String ?? "prom-backup.json")
+        case "pickText":       pickBackupFile()
         default: break
         }
     }
@@ -205,7 +256,9 @@ final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     private func requestAuth(_ done: ((Bool) -> Void)? = nil) {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { ok, _ in
             DispatchQueue.main.async {
-                self.webView?.evaluateJavaScript("window.__promNotifGranted = \(ok);", completionHandler: nil)
+                self.webView?.evaluateJavaScript(
+                    "window.__promNotifGranted = \(ok); window.__promPerm && window.__promPerm(\(ok));",
+                    completionHandler: nil)
                 done?(ok)
             }
         }
@@ -300,4 +353,69 @@ final class Bridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             }, completionHandler: nil)
         }
     }
+
+    // MARK: 备份文件（导出 / 导入）
+
+    /// 导出：写进临时目录再交给系统分享面板（存到「文件」或发给另一台设备）
+    private func shareText(_ text: String, name: String) {
+        let safeName = name.isEmpty ? "prom-backup.json" : name
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(safeName)
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            return
+        }
+        DispatchQueue.main.async {
+            guard let root = Bridge.topViewController() else { return }
+            let ac = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+            if let pop = ac.popoverPresentationController {
+                pop.sourceView = root.view
+                pop.sourceRect = CGRect(x: root.view.bounds.midX, y: root.view.bounds.midY, width: 0, height: 0)
+                pop.permittedArrowDirections = []
+            }
+            root.present(ac, animated: true)
+        }
+    }
+
+    /// 导入：系统文件选择器 → 读成 base64 → 回传页面（纯 ASCII，不用操心转义）
+    private func pickBackupFile() {
+        DispatchQueue.main.async {
+            guard let root = Bridge.topViewController() else { return }
+            let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.json, .plainText, .data],
+                                                         asCopy: true)
+            picker.delegate = self
+            picker.allowsMultipleSelection = false
+            root.present(picker, animated: true)
+        }
+    }
+
+    /// 找到当前最上层的控制器（分享面板 / 文件选择器都要从它 present）
+    static func topViewController() -> UIViewController? {
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+        var top = scene?.windows.first(where: { $0.isKeyWindow })?.rootViewController
+        while let presented = top?.presentedViewController { top = presented }
+        return top
+    }
+}
+
+// MARK: - 文件选择回调
+
+extension Bridge: UIDocumentPickerDelegate {
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        guard let url = urls.first else { return }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else {
+            webView?.evaluateJavaScript("window.__promToast && window.__promToast('读取备份文件失败');",
+                                        completionHandler: nil)
+            return
+        }
+        let b64 = data.base64EncodedString()
+        webView?.evaluateJavaScript("window.__promImportB64 && window.__promImportB64('\(b64)');",
+                                    completionHandler: nil)
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {}
 }
