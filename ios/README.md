@@ -51,6 +51,43 @@ ios/
 图形取自 `app/src/main/res/drawable-xxxhdpi/ic_launcher_foreground.png`，
 裁掉自适应图标的留白后按 64.5% 高度居中——比安卓 108dp 画布更满，避免 iOS 上显得太小。
 
+
+## 出 IPA（未签名）
+
+没有开发者账号也能出包——只是别人装之前要自己签一次。
+
+```sh
+cd ios
+./build-ipa.sh
+```
+
+产物：`Prom-12.8-unsigned.ipa`（约 380 KB，arm64，iOS 16+）
+
+### 别人怎么装
+
+| 工具 | 需要 | 说明 |
+|---|---|---|
+| **Sideloadly** | Windows / Mac + 数据线 | 拖入 IPA，填自己的 Apple ID，签完直接装。**7 天到期** |
+| **AltStore** | 电脑装 AltServer 一次 | 之后同一 Wi-Fi 下自动续签，不用每次插线 |
+| **SideStore** | 首次需电脑配对 | 之后可在手机上自动续签 |
+| **ESign / 爱思助手** | — | 用现成证书签，但网上流传的企业证书随时吊销，**不建议** |
+
+免费 Apple ID 的限制：**7 天**有效期、最多 3 个 App、不能推送通知（本地通知可以）。
+
+### 为什么是「未签名」
+
+签名需要 `Apple Development` 证书 + 对应设备的 provisioning profile。
+这两样都绑定付费开发者账号，本仓库不含任何证书，因此在命令行只能产出未签名包。
+
+要出**已签名**的包，在 Xcode 里配好 Team 后：
+
+```sh
+xcodebuild -project Prom.xcodeproj -scheme Prom -sdk iphoneos \
+  -configuration Release -archivePath build/Prom.xcarchive archive
+xcodebuild -exportArchive -archivePath build/Prom.xcarchive \
+  -exportPath build/ipa -exportOptionsPlist ExportOptions.plist
+```
+
 ## 桥接对照
 
 | 安卓 (`@JavascriptInterface`) | iOS 实现 | 说明 |
@@ -76,6 +113,7 @@ ios/
 ## 上架前还要补的
 
 - [x] App 图标（已从安卓 `ic_launcher_foreground.png` 生成，含浅色/深色/着色三种）
+- [x] 出未签名 IPA（`./build-ipa.sh`）
 - [ ] 启动图（现由 `UILaunchScreen_Generation` 生成纯色）
 - [ ] 隐私清单 `PrivacyInfo.xcprivacy`（App Store 从 2024 起要求）
 - [ ] App Store 审核所需的截图、描述、年龄分级
