@@ -380,6 +380,82 @@ input.err{border-color:var(--ink);background:color-mix(in srgb,var(--ink) 8%,var
 .rot span{border:1px solid rgba(255,255,255,.4);padding:14px 18px}
 @media (orientation:landscape) and (max-height:620px){.rot{display:grid}}
 
+
+/* 深色主题下的强调色文字：原始色是 #111~#c8 的灰阶，压在深底上会消失，这里按主题提亮 */
+html[data-theme="dark"] .rb-emoji,
+html[data-theme="dark"] .rb-icon,
+html[data-theme="dark"] .rb-ex-icon,
+html[data-theme="dark"] .rb-ex-rank,
+html[data-theme="dark"] .excard .exi,
+html[data-theme="dark"] .excard .exr{color:color-mix(in srgb,var(--ec,var(--sc,var(--ink))) 38%,#F2F2F0)}
+html[data-theme="dark"] .excard{border-top-color:color-mix(in srgb,var(--ec,var(--ink)) 45%,#F2F2F0)}
+html[data-theme="dark"] .rb-ex-icon{border-color:color-mix(in srgb,var(--ec,var(--line-2)) 40%,#F2F2F0)}
+
+
+/* ============================================================
+   平板适配：768px 起两栏，1100px 起放宽；不在手机形态上生效
+   ============================================================ */
+@media (min-width:768px){
+  body{background:var(--bg);display:block;padding:0}
+  .app{max-width:960px;width:100%;margin:0 auto;height:auto;min-height:100dvh;
+    padding:calc(18px + env(safe-area-inset-top)) 28px calc(20px + env(safe-area-inset-bottom));
+    border:none;border-radius:0;box-shadow:none;overflow:visible;background:var(--bg)}
+  .topbar{padding:6px 0 16px;margin-bottom:20px}
+  .logo{width:32px;height:36px}
+  .brand{font-size:20px;letter-spacing:.18em}
+
+  /* 两栏 */
+  .stack{grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+  .stack > *{min-width:0}
+
+  /* 通栏块 */
+  #view-checkin .hero,
+  #view-rank .sec-title,#view-rank .car-shell,#view-rank .tier-card,
+  #view-score .total-rank,
+  #view-ach .ach-head,#view-ach .ach-grid,
+  #view-me .prof-card,
+  .credits{grid-column:1 / -1}
+
+  /* 块内留白放大 */
+  .card{padding:20px}
+  .hero{padding:26px 24px;border-radius:20px}
+  .hero-rank{font-size:36px;letter-spacing:.1em}
+  .badge-wrap .badge{width:104px;height:104px}
+  .badge.ic svg{width:64px;height:64px}
+  .hero-sub{font-size:14px}
+  .sec-title{font-size:16px}
+  .stat b,.stat-num{font-size:26px}
+
+  /* 底部导航：浮动胶囊，不再压在内容上 */
+  .app{padding-bottom:calc(104px + env(safe-area-inset-bottom))}
+  .tabbar{position:fixed;left:0;right:0;bottom:calc(16px + env(safe-area-inset-bottom));
+    width:min(600px,calc(100% - 40px));margin:0 auto;border:1px solid var(--line);border-radius:999px;
+    padding:6px;background:var(--chrome);-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px);
+    box-shadow:0 16px 44px rgba(0,0,0,.16)}
+  .tab{min-height:50px;font-size:13px;border-radius:999px}
+  .tab.on{background:var(--ink);color:var(--on-ink)}
+
+  /* 成就网格更密（提高权重，压过后面的基础规则） */
+  #view-ach .ach-grid{grid-template-columns:repeat(4,1fr);gap:14px}
+}
+
+@media (min-width:1100px){
+  .app{max-width:1180px;padding-left:36px;padding-right:36px}
+  .tabbar{max-width:1180px}
+  .stack{gap:24px}
+  #view-ach .ach-grid{grid-template-columns:repeat(5,1fr)}
+}
+
+/* 横屏手机 / 小横屏：矮屏下两栏并压缩间距 */
+@media (min-width:768px) and (max-height:560px){
+  .app{padding-top:10px}
+  .stack{gap:14px}
+  .hero{padding:16px 18px}
+  .hero-rank{font-size:26px}
+  .app{padding-bottom:calc(88px + env(safe-area-inset-bottom))}
+  .tabbar{bottom:calc(10px + env(safe-area-inset-bottom))}
+}
+
 /* SECTION: credits + reduced motion */
 .credits{margin-top:22px;padding-bottom:6px;text-align:center;font-size:10.5px;color:var(--ink-3);line-height:2;letter-spacing:.14em}
 .credits b{display:block;font-weight:700;letter-spacing:.26em;color:var(--ink-2)}
@@ -715,6 +791,8 @@ body.enter.play .topbar,body.enter.play .stack>*,body.enter.play .tabbar,body.en
 .prof-avatar{position:relative;flex:none;width:76px;height:76px;border-radius:50%;overflow:hidden;
   border:1px solid var(--line-2);background:var(--bg-2);display:grid;place-items:center;padding:0}
 .prof-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.prof-avatar img[hidden]{display:none}
+img[hidden]{display:none!important}
 .prof-avatar .prof-ph{font-size:26px;color:var(--ink-3);font-weight:400;line-height:1}
 .prof-avatar:active{transform:scale(.97)}
 .prof-meta{flex:1;min-width:0}
@@ -1119,7 +1197,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
           <div class="tier-track" id="tierTrack"></div>
         </div>
         <div class="tier-dots" id="tierDots"></div>
-        <p class="range-hint">左右滑动查看七段 · 每段分 III / II / I 三小级；晋段额外奖励 30～80 学习点。</p>
+        <p class="range-hint">左右滑动查看七段 · 每段分 下 / 中 / 上 三小级；晋段额外奖励 30～80 学习点。</p>
       </div>
     </div>
   </section>
@@ -1869,7 +1947,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     return n;
   }
 
-  /* CORE: 打卡段位（大段位 × III/II/I） */
+  /* CORE: 打卡段位（大段位 × 下/中/上） */
   function rankReward(idx) { return 20 + idx * 10; }
 
   function rankInfo(pts) {
