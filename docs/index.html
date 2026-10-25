@@ -27,6 +27,38 @@
   .stat span{font-size:12px;letter-spacing:.22em;color:var(--dim)}
 
 
+
+  /* 移动端安装引导 */
+  .mcta{display:none}
+  @media(max-width:760px){
+    .wrap{grid-template-columns:1fr;padding:28px 18px 40px;gap:26px}
+    h1{font-size:38px;line-height:1.25}
+    .stats{gap:20px;margin:26px 0 6px}
+    .stat b{font-size:26px}
+    .feat{grid-template-columns:1fr;gap:16px;margin-top:26px}
+    .qrbox{display:flex;gap:16px;align-items:center;margin:40px 0 0;max-width:560px;
+    border:1px solid rgba(237,231,214,.1);padding:16px 18px}
+  .qrbox img{width:104px;height:104px;image-rendering:pixelated;flex:none}
+  .qrbox b{display:block;font-size:14px;letter-spacing:.04em;margin-bottom:6px}
+  .qrbox span{font-size:12.5px;line-height:1.8;color:rgba(237,231,214,.5)}
+  @media(max-width:760px){.qrbox{display:none}}
+  .install{display:none}
+    .phone{position:static;order:-1}
+    .frame{width:100%;height:auto;aspect-ratio:390/740;border-radius:34px;padding:8px}
+    .frame iframe{border-radius:28px}
+    .shots{gap:10px;padding:0 18px 40px}
+    .shots img{width:120px}
+    .mcta{display:block;position:fixed;left:0;right:0;bottom:0;z-index:99;
+      padding:12px 14px calc(12px + env(safe-area-inset-bottom));
+      background:rgba(11,11,12,.94);border-top:1px solid rgba(200,163,74,.28);
+      backdrop-filter:blur(14px)}
+    .mcta-in{display:grid;gap:4px;text-align:center}
+    .mcta-t{font-size:15px;letter-spacing:.08em}
+    .mcta-s{font-size:12.5px;line-height:1.6;color:rgba(237,231,214,.55)}
+    .mcta-btn{margin-top:8px;display:block;padding:13px;border-radius:12px;
+      background:#C8A34A;color:#0B0B0C;font-size:15px;font-weight:600;letter-spacing:.1em;text-decoration:none}
+    body{padding-bottom:120px}
+  }
   .install{margin:46px 0 0;max-width:560px;display:grid;gap:18px}
   .it{display:grid;grid-template-columns:30px 1fr;gap:6px 14px;align-items:baseline;
     border-top:1px solid rgba(237,231,214,.10);padding-top:14px}
@@ -56,6 +88,15 @@
     color:rgba(237,231,214,.3)}
   @media(max-width:900px){.wrap{grid-template-columns:1fr;gap:40px}h1{font-size:44px}.phone{position:static}}
 </style></head><body>
+
+<div class="mcta" id="mcta">
+  <div class="mcta-in">
+    <div class="mcta-t">把 Prom 装到桌面</div>
+    <div class="mcta-s" id="mctaSteps">点下方按钮，两步就好</div>
+    <a class="mcta-btn" href="app.html">打开 Prom</a>
+  </div>
+</div>
+
 <div class="wrap">
   <div>
     <div class="brand"><i></i>PROM</div>
@@ -103,6 +144,15 @@
       </div>
     </div>
 
+
+    <div class="qrbox">
+      <img src="icons/qr-dark.png" alt="扫码打开">
+      <div>
+        <b>手机扫码，直接打开</b>
+        <span>Safari / Chrome 里「添加到主屏幕」<br>就是全屏 App，断网也能用</span>
+      </div>
+    </div>
+
     <div class="shops">
       <span class="tag gold">Android 8.0+</span>
       <span class="tag">离线可用</span>
@@ -127,4 +177,16 @@
 </div>
 
 <footer>PROM · 2026 · TUSAN苏苏 · MIT LICENSE</footer>
+
+<script>
+(function(){
+  var ua = navigator.userAgent;
+  var ios = /iPhone|iPad|iPod/.test(ua);
+  var el = document.getElementById('mctaSteps');
+  if (!el) return;
+  el.innerHTML = ios
+    ? '打开后点底部 <b>分享</b> → <b>添加到主屏幕</b>'
+    : '打开后点右上 <b>⋮</b> → <b>添加到主屏幕</b>';
+})();
+</script>
 </body></html>
