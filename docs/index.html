@@ -1,6 +1,11 @@
 <!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Prom · 每日一记 / A daily ledger</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<meta name="theme-color" content="#0B0B0C">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   :root{--ink:#0B0B0C;--paper:#EDE7D6;--gold:#C8A34A;--dim:rgba(237,231,214,.5)}
@@ -21,6 +26,14 @@
   .stat b{font-family:'Songti SC',serif;font-size:34px;display:block;letter-spacing:.04em}
   .stat span{font-size:12px;letter-spacing:.22em;color:var(--dim)}
 
+
+  .install{margin:46px 0 0;max-width:560px;display:grid;gap:18px}
+  .it{display:grid;grid-template-columns:30px 1fr;gap:6px 14px;align-items:baseline;
+    border-top:1px solid rgba(237,231,214,.10);padding-top:14px}
+  .it .num{font-family:'Songti SC',serif;font-size:13px;color:rgba(200,163,74,.75);letter-spacing:.1em}
+  .it b{font-size:15px;letter-spacing:.04em;font-weight:600}
+  .it span{grid-column:2;font-size:13px;line-height:1.85;color:rgba(237,231,214,.5)}
+  .it em{font-style:normal;color:rgba(200,163,74,.65);font-size:12px}
   .feat{margin:38px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:22px 30px;max-width:560px}
   .fi{border-left:2px solid rgba(200,163,74,.35);padding-left:14px}
   .fi b{display:block;font-size:15px;letter-spacing:.06em;margin-bottom:4px}
@@ -67,6 +80,29 @@
       <div class="fi"><b>离线 / Offline</b><span>不申请网络权限，数据只在本机<br><i>No network permission. Everything stays on device</i></span></div>
     </div>
 
+
+    <div class="install">
+      <div class="it">
+        <div class="num">01</div>
+        <b>手机浏览器打开，添加到主屏幕</b>
+        <span>iPhone：Safari → 分享 → 添加到主屏幕<br>
+              Android：Chrome → ⋮ → 添加到主屏幕<br>
+              <em>免费 · 不会过期 · 断网可用</em></span>
+      </div>
+      <div class="it">
+        <div class="num">02</div>
+        <b>Android 直接装 APK</b>
+        <span>从 Releases 下载，允许「未知来源」安装<br>
+              <em>281 KB · 有系统通知和触感</em></span>
+      </div>
+      <div class="it">
+        <div class="num">03</div>
+        <b>iPhone 想装原生版</b>
+        <span>用 Xcode + 免费 Apple ID 自签<br>
+              <em>7 天需重签 · 需要一台 Mac</em></span>
+      </div>
+    </div>
+
     <div class="shops">
       <span class="tag gold">Android 8.0+</span>
       <span class="tag">离线可用</span>
@@ -78,7 +114,7 @@
 
   <div class="phone">
     <div class="frame"><iframe src="app.html" title="Prom 在线演示"></iframe></div>
-    <div class="hint">直 接 在 页 面 里 试 用</div>
+    <div class="hint">可直接试用 · 想装到桌面请用手机打开本页</div>
   </div>
 </div>
 

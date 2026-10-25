@@ -901,6 +901,20 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
   animation:rbGrowIn .85s cubic-bezier(.2,.9,.3,1) .4s both}
 </style>
 
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<meta name="theme-color" content="#0B0B0C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    });
+  }
+</script>
 </head>
 <body class="enter">
 <!-- SECTION: splash（仅显示励志语录，不显示 Prom） -->
