@@ -32,10 +32,24 @@ ios/
 ├─ Prom.xcodeproj
 └─ Prom/
    ├─ PromApp.swift      App 入口 + WKWebView + 四个 JS 桥
+   ├─ Assets.xcassets/   App 图标（1024，含 dark / tinted 变体）
    └─ www/               与安卓共用的网页（index.html、龙图、收款码）
 ```
 
 `www` 是**文件夹引用**：改 `app/src/main/assets/index.html` 后，把它复制到 `ios/Prom/www/` 即可，不用改工程文件。
+
+## 图标
+
+安卓的自适应图标是「白底 + 黑色火苗」，iOS 这边沿用了同一套视觉：
+
+| 变体 | 文件 | 用途 |
+|---|---|---|
+| 默认 | `icon-1024.png` | 白底黑火苗，与安卓一致 |
+| 深色 | `icon-1024-dark.png` | 近黑底（`#0B0B0C`）+ 米白火苗，iOS 18 深色模式 |
+| 着色 | `icon-1024-tinted.png` | 透明底黑字形，交系统按用户主题染色 |
+
+图形取自 `app/src/main/res/drawable-xxxhdpi/ic_launcher_foreground.png`，
+裁掉自适应图标的留白后按 64.5% 高度居中——比安卓 108dp 画布更满，避免 iOS 上显得太小。
 
 ## 桥接对照
 
@@ -61,7 +75,7 @@ ios/
 
 ## 上架前还要补的
 
-- [ ] App 图标（现在用系统默认，需补 `Assets.xcassets`）
+- [x] App 图标（已从安卓 `ic_launcher_foreground.png` 生成，含浅色/深色/着色三种）
 - [ ] 启动图（现由 `UILaunchScreen_Generation` 生成纯色）
 - [ ] 隐私清单 `PrivacyInfo.xcprivacy`（App Store 从 2024 起要求）
 - [ ] App Store 审核所需的截图、描述、年龄分级
