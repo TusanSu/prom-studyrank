@@ -3,7 +3,7 @@
 **把每天的努力，记成一笔账。**
 *A 281 KB Android app that turns daily effort into a ledger.*
 
-[**▶ 在线试用 / Live demo**](https://tusan-su.github.io/prom-studyrank/)　·　[下载 APK / Download](https://github.com/TusanSu/prom-studyrank/releases)　·　[MIT](LICENSE)
+[**▶ 在线试用 / Live demo**](https://tusansu.github.io/prom-studyrank/)　·　[下载 APK / Download](https://github.com/TusanSu/prom-studyrank/releases)　·　[MIT](LICENSE)
 
 <p align="center">
   <img src="docs/shots/home.png" width="24%" alt="首页 / Home">
