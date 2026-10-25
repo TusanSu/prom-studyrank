@@ -3,7 +3,9 @@
 **把每天的努力，记成一笔账。**
 *A 281 KB Android app that turns daily effort into a ledger.*
 
-[**▶ 在线试用 / Live demo**](https://tusansu.github.io/prom-studyrank/)　·　[下载 APK / Download](https://github.com/TusanSu/prom-studyrank/releases)　·　[MIT](LICENSE)
+[**▶ 在线试用 / Live demo**](https://tusansu.github.io/prom-studyrank/)　·　[下载 APK / Download](https://github.com/TusanSu/prom-studyrank/releases)　·　[iOS 工程](ios/README.md)　·　[MIT](LICENSE)
+
+`Android 8.0+`　·　`iOS 16+`　·　`281 KB`
 
 <p align="center">
   <img src="docs/shots/home.png" width="24%" alt="首页 / Home">
@@ -108,6 +110,26 @@ No bitmap asset packs — badges, dragon and charts are all drawn in SVG/Canvas 
 
 输出：`build/apk/StudyRankApp-12.8-release.apk`
 
+### iOS
+
+界面完全复用同一个 `index.html`，外面是一层 WKWebView，原生只实现四个 JS 桥。
+
+```sh
+open ios/Prom.xcodeproj     # 选好 Team 后 ⌘R
+```
+
+命令行验证编译（不签名）：
+
+```sh
+cd ios
+xcodebuild -project Prom.xcodeproj -target Prom \
+  -sdk iphonesimulator -configuration Debug \
+  ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO \
+  SYMROOT="$PWD/build/out" OBJROOT="$PWD/build/obj" build
+```
+
+细节与差异（剪贴板、相册、通知）见 [ios/README.md](ios/README.md)。
+
 > 签名需要你自己的 keystore —— 仓库里不含任何密钥文件。
 > *Signing needs your own keystore. No keys are included in this repo.*
 
@@ -120,6 +142,11 @@ app/
    ├─ AndroidManifest.xml          4 个权限
    ├─ assets/index.html            界面与逻辑（单文件）
    └─ java/com/studyrank/app/      5 个 Java 类
+ios/                               iOS 工程（WKWebView 外壳）
+├─ Prom.xcodeproj
+└─ Prom/
+   ├─ PromApp.swift                App 入口 + 四个 JS 桥
+   └─ www/                         与安卓共用的网页
 docs/                              GitHub Pages 在线演示
 ├─ index.html                      落地页（手机框内嵌 App）
 └─ app.html                        App 本体，浏览器可直接运行
@@ -127,7 +154,9 @@ docs/                              GitHub Pages 在线演示
 
 ## 版本 / Version
 
-**12.8** — 境界更名「一重·天枢 → 七重·摇光」，徽章加入龙瞳配色。
+**12.8** — 境界更名「一重·天枢 → 七重·摇光」，徽章加入龙瞳配色；新增 iOS 工程。
+
+*Tiers renamed after the seven stars of the Big Dipper; dragon-eye badge colours; iOS target added.*
 
 ## 许可 / License
 
