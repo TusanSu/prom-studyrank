@@ -9,8 +9,23 @@ AJ="$SDK/platforms/android-34/android.jar"
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 OUT_DIR="$APP_DIR/build/apk"
 KS="$APP_DIR/build/studyrank-release.jks"
-KS_PASS="StudyRank2026"
 KS_ALIAS="studyrank"
+PASS_FILE="$APP_DIR/build/.keystore.pass"
+
+# 签名密码不写进仓库：优先读环境变量 PROM_KS_PASS，其次 build/.keystore.pass
+# （首次运行自动生成 32 位随机密码并写 600 权限文件，两者都在 .gitignore 里）
+if [ -n "${PROM_KS_PASS:-}" ]; then
+    KS_PASS="$PROM_KS_PASS"
+elif [ -f "$PASS_FILE" ]; then
+    KS_PASS="$(cat "$PASS_FILE")"
+else
+    KS_PASS="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)"
+    mkdir -p "$(dirname "$PASS_FILE")"
+    (umask 077; printf '%s' "$KS_PASS" >"$PASS_FILE")
+    chmod 600 "$PASS_FILE"
+    echo "▸ 已生成随机签名密码 → $PASS_FILE（勿提交，已在 .gitignore）"
+fi
+export PROM_KS_PASS="$KS_PASS"
 
 [ -x "$BT/aapt2" ] || { echo "缺少 aapt2：$BT"; exit 1; }
 [ -f "$AJ" ]       || { echo "缺少 android.jar：$AJ"; exit 1; }
@@ -48,17 +63,23 @@ cp build/apk/base-unsigned.apk build/apk/with-dex.apk
 (cd build/dex && zip -q -j "$OUT_DIR/with-dex.apk" classes.dex)
 "$BT/zipalign" -f -p 4 build/apk/with-dex.apk build/apk/aligned.apk
 
-# 6) 签名（首次运行时生成 keystore）
+# 6) 签名（首次运行时生成 keystore；密码只经环境变量传给 keytool / apksigner）
+if [ -f "$KS" ] && ! keytool -list -keystore "$KS" -storepass:env PROM_KS_PASS -alias "$KS_ALIAS" >/dev/null 2>&1; then
+    echo "✗ 打不开 $KS：密码不匹配。设置 PROM_KS_PASS 或修正 $PASS_FILE 后重试" >&2
+    exit 1
+fi
+
 if [ ! -f "$KS" ]; then
+    echo "▸ 生成新 keystore（装机升级会失败：已有安装必须是同一把钥匙才能覆盖）"
     keytool -genkeypair -v -keystore "$KS" -storetype PKCS12 -alias "$KS_ALIAS" \
         -keyalg RSA -keysize 2048 -validity 10950 \
-        -storepass "$KS_PASS" -keypass "$KS_PASS" \
+        -storepass:env PROM_KS_PASS -keypass:env PROM_KS_PASS \
         -dname "CN=StudyRank, OU=Mobile, O=StudyRank, L=Beijing, ST=Beijing, C=CN"
 fi
 
 "$BT/apksigner" sign \
     --ks "$KS" --ks-key-alias "$KS_ALIAS" \
-    --ks-pass "pass:$KS_PASS" --key-pass "pass:$KS_PASS" \
+    --ks-pass env:PROM_KS_PASS --key-pass env:PROM_KS_PASS \
     --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
     --out "$OUT_DIR/StudyRankApp-12.9-release.apk" build/apk/aligned.apk
 

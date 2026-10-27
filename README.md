@@ -114,6 +114,22 @@ No bitmap asset packs — badges, dragon and charts are all drawn in SVG/Canvas 
 
 输出：`build/apk/StudyRankApp-12.9-release.apk`
 
+### 签名 / Signing
+
+签名密码不在仓库里。`build-apk.sh` 的取值顺序：
+
+1. 环境变量 `PROM_KS_PASS`（推荐，CI 里用）；
+2. `build/.keystore.pass`（首次运行自动生成 32 位随机密码，600 权限）。
+
+`build/` 已加入 `.gitignore`，keystore 与密码文件都不会被提交。要换密码：
+
+```sh
+keytool -importkeystore -srckeystore 旧.jks -srcstorepass:env OLD \
+  -destkeystore build/studyrank-release.jks -deststorepass:env NEW
+```
+
+**别重新生成 keystore**：安卓只认「同一把钥匙」的升级包，换钥匙意味着所有用户必须先卸载再装（数据全丢）。旧版本用过的 `StudyRank2026` 已经在 git 历史里，只能当作已泄露处理——12.9 起该 keystore 已改成随机密码，证书指纹不变（`fcd70af7…`），升级链路正常。
+
 ### iOS
 
 界面完全复用同一个 `index.html`，外面是一层 WKWebView，原生只实现四个 JS 桥。
