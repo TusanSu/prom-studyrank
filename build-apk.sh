@@ -35,7 +35,7 @@ sed 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android">|<ma
     -A app/src/main/assets \
     --java build/gen \
     --min-sdk-version 26 --target-sdk-version 34 \
-    --version-code 47 --version-name 12.8
+    --version-code 48 --version-name 12.9
 
 # 4) 编译 Java -> DEX
 javac --release 17 -encoding UTF-8 -classpath "$AJ" -d build/classes \
@@ -60,8 +60,8 @@ fi
     --ks "$KS" --ks-key-alias "$KS_ALIAS" \
     --ks-pass "pass:$KS_PASS" --key-pass "pass:$KS_PASS" \
     --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
-    --out "$OUT_DIR/StudyRankApp-12.8-release.apk" build/apk/aligned.apk
+    --out "$OUT_DIR/StudyRankApp-12.9-release.apk" build/apk/aligned.apk
 
-"$BT/apksigner" verify --verbose "$OUT_DIR/StudyRankApp-12.8-release.apk"
-"$BT/aapt2" dump badging "$OUT_DIR/StudyRankApp-12.8-release.apk" | head -6
-echo "✅ 输出：$OUT_DIR/StudyRankApp-12.8-release.apk"
+"$BT/apksigner" verify --verbose "$OUT_DIR/StudyRankApp-12.9-release.apk"
+"$BT/aapt2" dump badging "$OUT_DIR/StudyRankApp-12.9-release.apk" | head -6
+echo "✅ 输出：$OUT_DIR/StudyRankApp-12.9-release.apk"

@@ -280,6 +280,46 @@ ok('满分为 0 的成绩被丢弃', cleaned && cleaned.exams.every(e => e.id !=
   const afterLen = (storedState() || { records: [] }).records.length;
   ok('原密钥可导入且幂等', afterLen === beforeLen, beforeLen + ' -> ' + afterLen);
 
+  // ---- 断言 6：经济系统（12.9 调参）----
+  const E = window.__promTest;
+  E.reset();
+  ok('总段位与单科是两套刻度', E.rank(400, true) === 2 && E.rank(400, false) === 1,
+    '总段位 idx=' + E.rank(400, true) + ' 单科 idx=' + E.rank(400, false));
+  ok('七重阈值：单科 6000 / 总段位 3000', E.singleTop === 6000 && E.avgTop === 3000,
+    E.singleTop + ' / ' + E.avgTop);
+  ok('日上限三段：240 / 400 / 600', E.caps.full === 240 && E.caps.soft === 400 && E.caps.hard === 600);
+
+  E.reset();
+  const p0 = E.earn(18, 30, 'math');
+  E.seed(250);
+  const p250 = E.earn(18, 30, 'math');
+  E.seed(200);
+  const p450 = E.earn(18, 30, 'math');
+  E.seed(148);
+  const p598 = E.earn(18, 30, 'math');
+  E.seed(2);
+  const p600 = E.earn(18, 30, 'math');
+  ok('240 以内全价', p0 === 22, '+' + p0);
+  ok('240–400 打七五折', p250 === 16, '+' + p250);
+  ok('400 以上打五折', p450 === 11, '+' + p450);
+  ok('贴近硬顶按余量截断', p598 === 2, '+' + p598);
+  ok('撞满硬顶归零', p600 === 0, '+' + p600);
+
+  E.reset();
+  const q0 = E.quest();
+  E.seed(400);
+  const q400 = E.quest();
+  ok('任务奖励 = 当日学习点 5%（3–20 夹紧）', q0 === 3 && q400 === 20, q0 + ' / ' + q400);
+
+  E.reset();
+  E.seed(0, 240);
+  E.seed(0, 240);
+  const w1 = E.week('math');
+  E.seed(0, 240);
+  const w2 = E.week('math');
+  const w3 = E.week('math');
+  ok('周目标 4/8/12 小时逐档结算', w1 === 60 && w2 === 80 && w3 === 0, w1 + '/' + w2 + '/' + w3);
+
   report();
 })();
 

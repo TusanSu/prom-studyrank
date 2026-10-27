@@ -1727,7 +1727,11 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     { id: 'improve', name: '模考',   emoji: '考', rate: 24, kind: '考试' }
   ];
   var MINS = [15, 25, 30, 45, 60, 90, 120];
-  var DAILY_CAP = 240;
+  /* 日收益三段软上限：0–240 全价 · 240–400 七五折 · 400–600 五折 · 600 封顶
+     旧版是 240 硬截断，学到 6 小时之后逐条 return 0，等于否定后半程努力 */
+  var DAILY_FULL = 240;
+  var DAILY_CAP = 400;
+  var DAILY_HARD = 600;
   /* 科目难度权重：数理更吃专注，语言相对平稳 */
   var SUB_WEIGHT = {
     math: 1.2, physics: 1.2,
@@ -1735,7 +1739,8 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     chinese: 1.0, english: 1.0
   };
   function subWeight(sid) { return SUB_WEIGHT[sid] || 1; }
-  var WEEK_GOAL_MIN = 720, WEEK_GOAL_BONUS = 60;
+  /* 周目标阶梯：[分钟, 点数]。旧版只有 720 分钟一档，1.5 小时/天的人永远达不到 */
+  var WEEK_GOALS = [[240, 20], [480, 40], [720, 80]];
 
   /* DATA: 打卡段位（学习点累计，每段位三小级） */
   var RANKS = [
@@ -1748,6 +1753,21 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     { name: '七重', alias: '摇光', icon: '♛', min: 6000 }
   ];
   var TOP_CAP = 9000;
+
+  /* DATA: 总段位刻度（作用在「各科平均」上；和单科 RANKS、总分段位 TOTAL_RANKS 是三套东西）
+     单科阈值 6000 是「一科 100 小时」的量级，直接套到各科平均上，默认 6 科就变成
+     总共 36000 点、日均又被日上限除一次，实际要跑两年以上。这张表把七重压到
+     平均 3000 点（6 科约 18000），半年量级可达 */
+  var AVG_RANKS = [
+    { name: '一重', alias: '天枢', icon: '△', min: 0 },
+    { name: '二重', alias: '天璇', icon: '◇', min: 150 },
+    { name: '三重', alias: '天玑', icon: '○', min: 400 },
+    { name: '四重', alias: '天权', icon: '□', min: 750 },
+    { name: '五重', alias: '玉衡', icon: '◆', min: 1250 },
+    { name: '六重', alias: '开阳', icon: '★', min: 2000 },
+    { name: '七重', alias: '摇光', icon: '♛', min: 3000 }
+  ];
+  var AVG_TOP = 4500;
 
   /* DATA: 单科成绩段位（按得分率，附 150 分制 / 100 分制区间） */
   var SCORE_RANKS = [
@@ -2105,18 +2125,19 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
   /* CORE: 打卡段位（大段位 × 下/中/上） */
   function rankReward(idx) { return 20 + idx * 10; }
 
-  function rankInfo(pts) {
+  function rankInfo(pts, table) {
+    var T = table || RANKS, top = table ? AVG_TOP : TOP_CAP;
     var i = 0, k;
-    for (k = RANKS.length - 1; k >= 0; k--) { if (pts >= RANKS[k].min) { i = k; break; } }
-    var r = RANKS[i], next = RANKS[i + 1] || null;
-    var cap = next ? next.min : TOP_CAP;
+    for (k = T.length - 1; k >= 0; k--) { if (pts >= T[k].min) { i = k; break; } }
+    var r = T[i], next = T[i + 1] || null;
+    var cap = next ? next.min : top;
     var frac = Math.max(0, Math.min(1, (pts - r.min) / (cap - r.min)));
     var sub = Math.min(3, Math.floor(frac * 3) + 1);
     return {
       idx: i, name: r.name, icon: r.icon, sub: sub,
       label: r.name + '·' + (r.alias || '') + ' ' + ['下', '中', '上'][sub - 1],
-      frac: frac, atTop: !next && pts >= TOP_CAP,
-      need: next ? Math.ceil(next.min - pts) : Math.ceil(TOP_CAP - pts),
+      frac: frac, atTop: !next && pts >= top,
+      need: next ? Math.ceil(next.min - pts) : Math.ceil(top - pts),
       lo: r.min, hi: cap
     };
   }
@@ -3042,7 +3063,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
   }
   function earnPoints(g, min, sid) {
     var today = todayPoints();
-    if (today >= DAILY_CAP) return 0;
+    if (today >= DAILY_HARD) return 0;
     var pts = g.rate * min / 30;
     pts *= subWeight(sid);                       // 科目难度
     var same = 0;
@@ -3053,12 +3074,13 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     else if (same === 2) pts *= 0.75;            // 第 3 次打七五折
     var firstToday = !state.records.some(function (r) { return r.date === todayStr(); });
     if (firstToday && streakDays() >= 7) pts *= 1.1;
-    if (today >= DAILY_CAP * 0.6) pts *= 0.6;    // 当日过半后整体递减
+    if (today >= DAILY_CAP) pts *= 0.5;          // 过 400：五折
+    else if (today >= DAILY_FULL) pts *= 0.75;   // 240–400：七五折
     pts = Math.round(pts);
-    return Math.max(0, Math.min(pts, DAILY_CAP - today));
+    return Math.max(0, Math.min(pts, DAILY_HARD - today));
   }
 
-  /* 周目标：本周累计 12 小时，达成后一次性奖励 */
+  /* 周目标：4 / 8 / 12 小时三档，逐档结算 */
   function weekMonday(d) {
     var t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
     var dow = (t.getDay() + 6) % 7;
@@ -3075,14 +3097,20 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
   function checkWeekGoal(sid) {
     var wk = weekMonday(new Date());
     state.flags.weekGoal = state.flags.weekGoal || {};
-    if (state.flags.weekGoal[wk]) return 0;
-    if (weekMinutes() < WEEK_GOAL_MIN) return 0;
-    state.flags.weekGoal[wk] = 1;
-    state.bonus.push({
-      id: 'wg' + Date.now(), date: todayStr(), subject: sid,
-      pts: WEEK_GOAL_BONUS, reason: '周目标达成（12 小时）'
-    });
-    return WEEK_GOAL_BONUS;
+    /* 旧存档里这个键是布尔值（1 = 已领），新语义是「已领到第几档」，按档数读即可 */
+    var got = Math.max(0, Math.min(WEEK_GOALS.length, Number(state.flags.weekGoal[wk]) || 0));
+    var mins = weekMinutes(), sum = 0;
+    for (var i = got; i < WEEK_GOALS.length; i++) {
+      if (mins < WEEK_GOALS[i][0]) break;
+      var pts = WEEK_GOALS[i][1];
+      state.bonus.push({
+        id: 'wg' + wk + '_' + i, date: todayStr(), subject: sid,
+        pts: pts, reason: '周目标 ' + (WEEK_GOALS[i][0] / 60) + ' 小时'
+      });
+      sum += pts;
+      state.flags.weekGoal[wk] = i + 1;
+    }
+    return sum;
   }
   function paintPreview() {
     var box = $('pointPreview');
@@ -3093,8 +3121,9 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     var today = todayPoints();
     var w = subWeight(pickedSubject);
     var txt = g.name + ' · ' + pickedMin + ' 分钟' + (w !== 1 ? ' · 难度 ×' + w : '') + ' → 约 <b>+' + pts + '</b> 学习点';
-    if (today + pts >= DAILY_CAP) txt += ' · 今日已达上限';
-    else if (today >= DAILY_CAP * 0.6) txt += ' · 今日已过半，边际递减中';
+    if (today >= DAILY_HARD) txt += ' · 今日已达上限';
+    else if (today >= DAILY_CAP) txt += ' · 已过 400，收益五折';
+    else if (today >= DAILY_FULL) txt += ' · 已过 240，收益七五折';
     box.innerHTML = txt;
   }
 
@@ -3163,7 +3192,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
   function renderHero() {
     var list = visibleSubjects(), sum = 0;
     list.forEach(function (s) { sum += pointsOf(s.id); });
-    var avg = list.length ? sum / list.length : 0, info = rankInfo(avg);
+    var avg = list.length ? sum / list.length : 0, info = rankInfo(avg, AVG_RANKS);
     elBadge.innerHTML = rankBadgeHTML(info.idx, info.sub, info.frac, 'full');
     elOverallLabel.textContent = (state.profile.name ? state.profile.name + ' · ' : '') + '总学科段位（' + list.length + ' 科平均）';
     elRank.textContent = info.label;
@@ -3301,7 +3330,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     elDots.innerHTML = '';
     var list = visibleSubjects(), sum = 0;
     list.forEach(function (s) { sum += pointsOf(s.id); });
-    var avg = list.length ? sum / list.length : 0, aInfo = rankInfo(avg);
+    var avg = list.length ? sum / list.length : 0, aInfo = rankInfo(avg, AVG_RANKS);
 
     var te = latestExam('total'), tDelta = deltaInfo('total', false), tRank;
     if (te) {
@@ -3992,6 +4021,30 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
   window.__promAvatarCancel = function () {};
   window.__promToast = function (msg) { showToast(msg); };
 
+  /* 冒烟测试用的只读钩子：把经济系统的纯函数暴露出来，好断言「总段位与单科是两套刻度」
+     这类规则。不参与任何业务路径，删掉也不影响运行。 */
+  window.__promTest = {
+    rank: function (pts, avg) { return rankInfo(pts, avg ? AVG_RANKS : null).idx; },
+    caps: { full: DAILY_FULL, soft: DAILY_CAP, hard: DAILY_HARD },
+    singleTop: RANKS[RANKS.length - 1].min,
+    avgTop: AVG_RANKS[AVG_RANKS.length - 1].min,
+    earn: function (rate, min, sid) { return earnPoints({ rate: rate }, min, sid); },
+    quest: questReward,
+    week: checkWeekGoal,
+    seed: function (pts, min) {
+      state.records.push({
+        id: 'test' + Date.now() + Math.floor(Math.random() * 1000),
+        subject: 'chinese', gain: 'word', gainName: '背单词', note: '',
+        min: min || 0, points: pts || 0, date: todayStr(), time: '12:00', ts: Date.now()
+      });
+    },
+    reset: function () {
+      state.records = state.records.filter(function (r) { return String(r.id).indexOf('test') !== 0; });
+      state.bonus = [];
+      state.flags.weekGoal = {};
+    }
+  };
+
   function shrinkImage(file, cb) {
     var reader = new FileReader();
     reader.onload = function () {
@@ -4112,7 +4165,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     elNote.value = '';
     elHint.className = 'form-hint ok';
     if (weekBonus) {
-      showToast('本周累计 12 小时，额外 +' + weekBonus + ' 学习点');
+      showToast('周目标达成，额外 +' + weekBonus + ' 学习点');
     }
     elHint.textContent = s.name + '·' + g.name + ' ' + min + ' 分钟已记录，+' + pts + ' 学习点，继续保持！';
     elBadge.classList.remove('pulse'); void elBadge.offsetWidth; elBadge.classList.add('pulse');
@@ -4631,19 +4684,25 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
 
 
   /* ================= 每日任务 ================= */
+  /* 任务奖励不再是固定点数：改成当日学习点的 5%（三个全清 = ×1.15）
+     固定奖励会让「点开 App 完成任务」比「多学一小时」更值钱，学习点就名不副实了 */
+  var QUEST_PCT = 0.05, QUEST_MIN = 3, QUEST_MAX = 20;
   var QUEST_POOL = [
-    { id: 'check1', kind: 'checks', target: 1, pts: 10, text: '今天打卡 1 次' },
-    { id: 'check2', kind: 'checks', target: 2, pts: 15, text: '今天打卡 2 次' },
-    { id: 'check3', kind: 'checks', target: 3, pts: 25, text: '今天打卡 3 次' },
-    { id: 'pts30', kind: 'points', target: 30, pts: 15, text: '今天攒够 30 学习点' },
-    { id: 'pts60', kind: 'points', target: 60, pts: 25, text: '今天攒够 60 学习点' },
-    { id: 'note1', kind: 'notes', target: 1, pts: 10, text: '给一条记录写备注' },
-    { id: 'exam1', kind: 'exam', target: 1, pts: 20, text: '记录一次考试成绩' },
-    { id: 'math1', kind: 'subject', subject: 'math', target: 1, pts: 15, text: '给数学打一次卡' },
-    { id: 'eng1', kind: 'subject', subject: 'english', target: 1, pts: 15, text: '给英语打一次卡' },
-    { id: 'chi1', kind: 'subject', subject: 'chinese', target: 1, pts: 15, text: '给语文打一次卡' },
-    { id: 'streak3', kind: 'streak', target: 3, pts: 20, text: '连续打卡满 3 天' }
+    { id: 'check1', kind: 'checks', target: 1, text: '今天打卡 1 次' },
+    { id: 'check2', kind: 'checks', target: 2, text: '今天打卡 2 次' },
+    { id: 'check3', kind: 'checks', target: 3, text: '今天打卡 3 次' },
+    { id: 'pts30', kind: 'points', target: 30, text: '今天攒够 30 学习点' },
+    { id: 'pts60', kind: 'points', target: 60, text: '今天攒够 60 学习点' },
+    { id: 'note1', kind: 'notes', target: 1, text: '给一条记录写备注' },
+    { id: 'exam1', kind: 'exam', target: 1, text: '记录一次考试成绩' },
+    { id: 'math1', kind: 'subject', subject: 'math', target: 1, text: '给数学打一次卡' },
+    { id: 'eng1', kind: 'subject', subject: 'english', target: 1, text: '给英语打一次卡' },
+    { id: 'chi1', kind: 'subject', subject: 'chinese', target: 1, text: '给语文打一次卡' },
+    { id: 'streak3', kind: 'streak', target: 3, text: '连续打卡满 3 天' }
   ];
+  function questReward() {
+    return Math.max(QUEST_MIN, Math.min(QUEST_MAX, Math.round(todayPoints() * QUEST_PCT)));
+  }
 
   function seedRand(str) {
     var h = 2166136261;
@@ -4676,7 +4735,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
       var q = pool[k];
       if (used[q.kind]) continue;
       used[q.kind] = 1;
-      picked.push({ id: q.id, kind: q.kind, subject: q.subject || null, target: q.target, pts: q.pts, text: q.text, done: false });
+      picked.push({ id: q.id, kind: q.kind, subject: q.subject || null, target: q.target, text: q.text, done: false });
     }
     state.quests = { date: d, items: picked };
   }
@@ -4716,7 +4775,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
         var subj = it.subject || lastSubj || pickedSubject || 'chinese';
         state.bonus.push({
           id: 'b' + Date.now() + Math.floor(Math.random() * 1000),
-          date: todayStr(), subject: subj, pts: it.pts, reason: it.text
+          date: todayStr(), subject: subj, pts: questReward(), reason: it.text
         });
         // 累计完成的任务数（成就「任务狂」用），之前这个计数根本没人写
         state.flags.questDone = (state.flags.questDone || 0) + 1;
@@ -4748,7 +4807,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
       bar.appendChild(fill);
       main.appendChild(bar);
       row.appendChild(main);
-      row.appendChild(el('span', 'q-pts', '+' + it.pts));
+      row.appendChild(el('span', 'q-pts', '+' + Math.round(QUEST_PCT * 100) + '%'));
       box.appendChild(row);
     });
     var c = $('questCount');
@@ -4775,8 +4834,8 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     { id: 'p100', icon: '百', name: '一百点', desc: '累计 100 学习点', tier: 1, target: 100, prog: totalPoints },
     { id: 'p1000', icon: '千', name: '一千点', desc: '累计 1000 学习点', tier: 2, target: 1000, prog: totalPoints },
     { id: 'p5000', icon: '万', name: '五千点', desc: '累计 5000 学习点', tier: 3, target: 5000, prog: totalPoints },
-    { id: 'gold', icon: '三', name: '摸到三重', desc: '总段位达到三重', tier: 2, target: 2, prog: function () { return rankInfo(avgPoints()).idx; } },
-    { id: 'diamond', icon: '六', name: '六重开阳', desc: '总段位达到六重', tier: 3, target: 5, prog: function () { return rankInfo(avgPoints()).idx; } },
+    { id: 'gold', icon: '三', name: '摸到三重', desc: '总段位达到三重', tier: 2, target: 2, prog: function () { return rankInfo(avgPoints(), AVG_RANKS).idx; } },
+    { id: 'diamond', icon: '六', name: '六重开阳', desc: '总段位达到六重', tier: 3, target: 5, prog: function () { return rankInfo(avgPoints(), AVG_RANKS).idx; } },
     { id: 'exam1', icon: '考', name: '第一次模考', desc: '记录一次考试成绩', tier: 1, target: 1, prog: function () { return state.exams.length; } },
     { id: 'exam10', icon: '测', name: '十次考试', desc: '累计记录 10 次成绩', tier: 2, target: 10, prog: function () { return state.exams.length; } },
     { id: 'subj6', icon: '六', name: '当日全能', desc: '一天内覆盖全部显示科目', tier: 2, target: 1, prog: function () {
@@ -4810,7 +4869,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     { id: 'r100', icon: '百', name: '一百次', desc: '累计打卡 100 次', tier: 3, target: 100, prog: function () { return state.records.length; } },
     { id: 's100', icon: '百', name: '百日', desc: '连续打卡 100 天', tier: 3, target: 100, prog: streakDays },
     { id: 'p10000', icon: '万', name: '一万点', desc: '累计 10000 学习点', tier: 3, target: 10000, prog: totalPoints },
-    { id: 'king', icon: '七', name: '七重摇光', desc: '总段位达到七重', tier: 3, target: 6, prog: function () { return rankInfo(avgPoints()).idx; } },
+    { id: 'king', icon: '七', name: '七重摇光', desc: '总段位达到七重', tier: 3, target: 6, prog: function () { return rankInfo(avgPoints(), AVG_RANKS).idx; } },
     { id: 'exam600', icon: '六', name: '六百分', desc: '单次总分达到 600', tier: 2, target: 600, prog: function () {
         var m = 0;
         state.exams.forEach(function (e) { if (e.subject === 'total') m = Math.max(m, e.score || 0); });
@@ -5103,7 +5162,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
     var doneQ = 0;
     (state.quests.items || []).forEach(function (q) { if (q.done) doneQ++; });
     var total = totalPoints();
-    var info = rankInfo(avgPoints());
+    var info = rankInfo(avgPoints(), AVG_RANKS);
     var streak = streakDays();
 
     var F = function (w, s) { return w + ' ' + s + 'px "PingFang SC","Hiragino Sans GB","Helvetica Neue",Arial,sans-serif'; };

@@ -61,7 +61,7 @@ cd ios
 ./build-ipa.sh
 ```
 
-产物：`Prom-12.8-unsigned.ipa`（约 380 KB，arm64，iOS 16+）
+产物：`Prom-12.9-unsigned.ipa`（约 380 KB，arm64，iOS 16+）
 
 ### 别人怎么装
 

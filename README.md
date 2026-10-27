@@ -39,14 +39,18 @@ Prom 在「努力」和「回报」之间，补上当天的那一次回应。
 
 学习点不是简单计时：
 
-- 科目有不同权重
+- 科目有不同权重（数理 ×1.2，语英 ×1.0）
 - 同一科目一天内多次打卡，第三笔起收益递减
-- 连续打卡有加成
-- 每日有上限，超过后衰减
+- 连续打卡有加成（首卡 ×1.1）
+- 每日收益分三段：240 点以内全价，240–400 七五折，400–600 五折，600 封顶——学得多依然拿得多，只是边际递减
+- 每日任务按「当日学习点的 5%」结算，三个全清约等于 ×1.15，零学习日不给点
+- 周目标分 4 / 8 / 12 小时三档，逐档 +20 / +40 / +80
 
 **2 · 七重境界 / Seven tiers**
 
 学习点从「一重·天枢」累积到「七重·摇光」，对应北斗七星。每一重分 **下 / 中 / 上** 三小级。
+
+段位有两套刻度，别混：**单科段位**看这一科自己的学习点（七重 6000，约等于单科一百小时）；**总段位**看各科平均（七重 3000）。同一份努力在总段位里被科目数摊薄，所以总段位的门槛单独设了一张表，否则默认六科时七重要三万六千点、得跑两年。
 
 *Points climb from **Tier I · Tianshu** to **Tier VII · Yaoguang**, named after the seven stars of the Big Dipper. Each tier has three steps.*
 
@@ -108,7 +112,7 @@ No bitmap asset packs — badges, dragon and charts are all drawn in SVG/Canvas 
 ./gradlew assembleRelease
 ```
 
-输出：`build/apk/StudyRankApp-12.8-release.apk`
+输出：`build/apk/StudyRankApp-12.9-release.apk`
 
 ### iOS
 
@@ -137,7 +141,7 @@ xcodebuild -project Prom.xcodeproj -target Prom \
 
 ```
 app/
-├─ build.gradle                    versionCode 47 / versionName 12.8
+├─ build.gradle                    versionCode 48 / versionName 12.9
 └─ src/main/
    ├─ AndroidManifest.xml          4 个权限
    ├─ assets/index.html            界面与逻辑（单文件，5406 行）
@@ -160,6 +164,16 @@ tools/
 > 改完界面先跑一遍测试：`node tools/smoke-test.js app/src/main/assets/index.html`
 
 ## 版本 / Version
+
+**12.9** — 学习点经济重做：总段位独立刻度、日上限 240→三段软曲线、任务改乘数、周目标阶梯化。
+
+- **总段位刻度**：`AVG_RANKS`（0/150/400/750/1250/2000/3000）单独一套，只作用在「各科平均」上；单科 `RANKS`（七重 6000）不动。默认 6 科时七重从 36000 总点降到 18000；
+- **日上限**：240 硬截断 → 240 / 400 / 600 三段（全价 → 七五折 → 五折 → 封顶）。学 8 小时不再只拿 240 点；
+- **任务奖励**：固定 10–25 点 → 当日学习点的 5%（3–20 夹紧），三个全清约 ×1.15，不再出现「点任务比多学一小时划算」；
+- **周目标**：单档 12 小时 → 4 / 8 / 12 小时三档，逐档 +20 / +40 / +80；
+- **测试**：冒烟测试 17 → 27 条断言，覆盖两套刻度、三段上限、任务乘数、周目标逐档。
+
+*Economy rebalance: separate total-rank scale, three-stage soft daily cap (240/400/600), quest rewards as a 5 % multiplier of the day's points, tiered weekly goals. Smoke test grew to 27 assertions.*
 
 **12.8** — 境界更名「一重·天枢 → 七重·摇光」，徽章加入龙瞳配色；新增 iOS 工程。
 
