@@ -141,12 +141,31 @@ html[data-theme="dark"] .sp-skip{color:rgba(255,255,255,.35)}
 .app{position:relative;z-index:1;width:100%;max-width:430px;margin:0 auto;
   padding:calc(10px + env(safe-area-inset-top)) 14px calc(14px + env(safe-area-inset-bottom));
   display:flex;flex-direction:column;gap:0;min-height:100dvh}
-@media (min-width:600px){
-  body{background:var(--bg-soft);display:flex;justify-content:center;align-items:flex-start;padding:20px 0}
-  .app{width:430px;height:calc(100dvh - 40px);min-height:0;overflow-y:auto;overscroll-behavior:contain;
-    background:var(--bg);border:1px solid var(--line);border-radius:34px;
-    box-shadow:0 30px 70px rgba(0,0,0,.16);scrollbar-width:none}
-  .app::-webkit-scrollbar{display:none}
+/* 竖屏平板 / 大屏手机：单栏宽版，不要手机壳、不要两栏 */
+@media (min-width:600px) and (max-width:899px){
+  body{background:var(--bg);display:block;padding:0}
+  .app{max-width:680px;width:100%;margin:0 auto;height:auto;min-height:100dvh;
+    padding:calc(14px + env(safe-area-inset-top)) 24px calc(84px + env(safe-area-inset-bottom));
+    border:none;border-radius:0;box-shadow:none;background:var(--bg);overflow:visible}
+  .topbar{padding:6px 0 14px;margin-bottom:18px}
+  .brand{font-size:18px}
+  .card{padding:18px}
+  .hero{padding:22px 20px;border-radius:18px}
+  .hero-rank{font-size:30px}
+  .badge-wrap{width:92px;height:92px}
+  .badge{width:92px;height:92px}
+  .badge.ic svg{width:56px;height:56px}
+  .hero-sub{font-size:13px}
+  .stat b{font-size:22px}
+  .sec-title{font-size:15px}
+  .chips{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .chips.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .exgrid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  #view-ach .ach-grid{grid-template-columns:repeat(3,1fr);gap:12px}
+  /* 导航贴底、不浮起来压内容 */
+  .tabbar{position:sticky;bottom:0;border-radius:0;width:auto;margin:0 -24px;
+    padding-left:24px;padding-right:24px;box-shadow:none}
+  .tab{min-height:52px;font-size:13px}
 }
 .topbar{display:flex;align-items:center;gap:10px;padding:8px 0 14px;border-bottom:1px solid var(--line);margin-bottom:16px}
 .logo{width:26px;height:30px;flex:none;display:grid;place-items:center;color:var(--ink);background:none;border:none}
@@ -397,7 +416,7 @@ html[data-theme="dark"] .rb-ex-icon{border-color:color-mix(in srgb,var(--ec,var(
 /* ============================================================
    平板适配：768px 起两栏，1100px 起放宽；不在手机形态上生效
    ============================================================ */
-@media (min-width:768px){
+@media (min-width:900px){
   body{background:var(--bg);display:block;padding:0}
   .app{max-width:960px;width:100%;margin:0 auto;height:auto;min-height:100dvh;
     padding:calc(18px + env(safe-area-inset-top)) 28px calc(20px + env(safe-area-inset-bottom));
@@ -422,6 +441,7 @@ html[data-theme="dark"] .rb-ex-icon{border-color:color-mix(in srgb,var(--ec,var(
   .card{padding:20px}
   .hero{padding:26px 24px;border-radius:20px}
   .hero-rank{font-size:36px;letter-spacing:.1em}
+  .badge-wrap{width:104px;height:104px}
   .badge-wrap .badge{width:104px;height:104px}
   .badge.ic svg{width:64px;height:64px}
   .hero-sub{font-size:14px}
@@ -449,7 +469,7 @@ html[data-theme="dark"] .rb-ex-icon{border-color:color-mix(in srgb,var(--ec,var(
 }
 
 /* 横屏手机 / 小横屏：矮屏下两栏并压缩间距 */
-@media (min-width:768px) and (max-height:560px){
+@media (min-width:900px) and (max-height:560px){
   .app{padding-top:10px}
   .stack{gap:14px}
   .hero{padding:16px 18px}
@@ -4807,7 +4827,7 @@ html[data-theme="dark"] .total-rank .rb-face{filter:none}
       bar.appendChild(fill);
       main.appendChild(bar);
       row.appendChild(main);
-      row.appendChild(el('span', 'q-pts', '+' + Math.round(QUEST_PCT * 100) + '%'));
+      row.appendChild(el('span', 'q-pts', '+' + questReward()));
       box.appendChild(row);
     });
     var c = $('questCount');
